@@ -45,7 +45,7 @@ sys_out = sys.stdout #pylint: disable=C0103
 #
 
 HEIGHT_STATUS   = 2
-HEIGHT_CON      = 7
+HEIGHT_CON      = 20
 WIDTH_ORDERBOOK = 45
 
 COLORS =    [["con_text",       curses.COLOR_BLUE,    curses.COLOR_CYAN]
@@ -284,11 +284,13 @@ class WinConsole(Win):
     def calc_size(self):
         """put it at the bottom of the screen"""
         self.height = HEIGHT_CON
+        self.width = self.termwidth - int(self.termwidth / 2) - 1
         self.posy = self.termheight - self.height
 
     def slot_debug(self, dummy_gox, (txt)):
         """this slot will be connected to all debug signals."""
-        self.write(txt)
+        if txt.startswith('[s]') == False:
+            self.write(txt)
 
     def write(self, txt):
         """write a line of text, scroll if needed"""
@@ -317,6 +319,44 @@ class WinConsole(Win):
         if "trade: ask:" in txt:
             col = COLOR_PAIR["con_text_sell"] + curses.A_BOLD
         self.win.addstr("\n" + txt,  col)
+        self.done_paint()
+
+class PluginConsole(Win):
+    """The console window at the bottom"""
+    def __init__(self, stdscr, gox):
+        """create the console window and connect it to the Gox debug
+        callback function"""
+        self.gox = gox
+        gox.signal_debug.connect(self.slot_debug)
+        Win.__init__(self, stdscr)
+
+    def paint(self):
+        """just empty the window after resize (I am lazy)"""
+        self.win.bkgd(" ", COLOR_PAIR["con_text"])
+
+    def resize(self):
+        """resize and print a log message. Old messages will have been
+        lost after resize because of my dumb paint() implementation, so
+        at least print a message indicating that fact into the
+        otherwise now empty console window"""
+        Win.resize(self)
+        self.write("### console has been resized")
+
+    def calc_size(self):
+        """put it at the bottom of the screen"""
+        self.height = HEIGHT_CON
+        self.width = self.termwidth - int(self.termwidth / 2) - 1
+        self.posy = self.termheight - self.height
+        self.posx = self.termwidth - int(self.termwidth / 2) + 1
+
+    def slot_debug(self, dummy_gox, (txt)):
+        """this slot will be connected to all plugin debug signals."""
+        if (txt.startswith('[s]')):
+            self.write(txt.replace('[s]', ' '))
+
+    def write(self, txt):
+        """write a line of text, scroll if needed"""
+        self.win.addstr("\n" + txt,  COLOR_PAIR["con_text"])
         self.done_paint()
 
 
@@ -957,6 +997,7 @@ class WinStatus(Win):
                     + goxapi.int2str(self.gox.wallet[currency], currency).strip() \
                     + " + "
             line1 = line1.strip(" +")
+            line1 += " | Fee: " + ("%f" % self.gox.trade_fee)
         else:
             line1 += "No info (yet)"
 
@@ -1509,6 +1550,7 @@ def main():
             printhook = PrintHook(gox)
 
             conwin = WinConsole(stdscr, gox)
+            plugwin = PluginConsole(stdscr, gox)
             bookwin = WinOrderBook(stdscr, gox)
             statuswin = WinStatus(stdscr, gox)
             chartwin = WinChart(stdscr, gox)
@@ -1532,6 +1574,7 @@ def main():
                         stdscr.erase()
                         stdscr.refresh()
                         conwin.resize()
+                        plugwin.resize()
                         bookwin.resize()
                         chartwin.resize()
                         statuswin.resize()
