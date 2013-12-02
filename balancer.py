@@ -10,7 +10,7 @@ import strategy
 simulate = True
 
 # Live or simulation notice
-simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
+simulate_or_live = ('SIMULATION - ' if simulate else '')
 
 DISTANCE    = 7     # percent price distance of next rebalancing orders
 FIAT_COLD   = 0     # Amount of Fiat stored at home but included in calculations
@@ -97,14 +97,14 @@ class Strategy(strategy.Strategy):
                 self.temp_halt = True
                 self.cancel_orders()
                 if vol_buy > 0:
-                    self.debug("[s]%s*** buying %f at market price of %f" % (
+                    self.debug("[s]%sbuying %f at market price of %f" % (
                         self.simulate_or_live,
                         gox.base2float(vol_buy),
                         gox.quote2float(price)))
                     if simulate == False:
                         gox.buy(0, vol_buy)
                 else:
-                    self.debug("[s]%s*** selling %f at market price of %f" % (
+                    self.debug("[s]%sselling %f at market price of %f" % (
                         self.simulate_or_live,
                         gox.base2float(-vol_buy),
                         gox.quote2float(price)))
@@ -160,10 +160,10 @@ class Strategy(strategy.Strategy):
 
         # Protect against selling below current ask price + step
         if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
-            next_sell = self.gox.quote2int(self.ask) + step
+            next_sell = mark_own(self.gox.quote2int(self.ask) + step)
             self.debug("[s]next_sell at %f, self.ask at %f" % (self.gox.quote2float(next_sell), self.ask))
         elif self.ask == 0:
-            status_prefix = 'Waiting for price - ' + self.simulate_or_live
+            status_prefix = 'Waiting for price, skipped ' + self.simulate_or_live
 
         sell_amount = -self.get_buy_at_price(next_sell)
         buy_amount = self.get_buy_at_price(next_buy)
