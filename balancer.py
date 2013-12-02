@@ -3,7 +3,14 @@ The portfolio rebalancing bot will buy and sell to maintain a
 constant asset allocation ratio of exactly 50/50 = fiat/BTC
 """
 
+import goxapi
 import strategy
+
+# Simulate
+simulate = True
+
+# Live or simulation notice
+simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
 
 DISTANCE    = 7     # percent price distance of next rebalancing orders
 FIAT_COLD   = 0     # Amount of Fiat stored at home but included in calculations
@@ -33,10 +40,14 @@ class Strategy(strategy.Strategy):
     """a portfolio rebalancing bot"""
     def __init__(self, gox):
         strategy.Strategy.__init__(self, gox)
+        self.ask = 0
+        self.simulate_or_live = simulate_or_live
+        self.distance = DISTANCE
+        self.init_distance = float(DISTANCE)
         self.temp_halt = False
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s loaded" % self.name)
-        self.debug("[s]Press 'i' for information (how much currently out of balance)\n Press 'r' to rebalance with market order at current price (required before rebalancing)\n Press 'p' to add initial rebalancing orders\n Press 'c' to cancel all rebalancing orders\n Press 'u' to update account information, order list and wallet")
+        self.debug("[s]Press 'i' for information (how much currently out of balance)\n WARNING Rebalancing will buy or sell up to half your fiat or BTC balance\n Press 'r' to rebalance with market order at current price (required before rebalancing)\n Press 'p' to add initial rebalancing orders and start trading\n Press 'c' to cancel all rebalancing orders and suspend trading\n Press 'u' to update account information, order list and wallet")
 
     def __del__(self):
         try:
@@ -86,13 +97,19 @@ class Strategy(strategy.Strategy):
                 self.temp_halt = True
                 self.cancel_orders()
                 if vol_buy > 0:
-                    self.debug("[s]buy %f at market" %
-                        gox.base2float(vol_buy))
-                    gox.buy(0, vol_buy)
+                    self.debug("[s]%s*** buying %f at market price of %f" % (
+                        self.simulate_or_live,
+                        gox.base2float(vol_buy),
+                        gox.quote2float(price)))
+                    if simulate == False:
+                        gox.buy(0, vol_buy)
                 else:
-                    self.debug("[s]sell %f at market" %
-                        gox.base2float(-vol_buy))
-                    gox.sell(0, -vol_buy)
+                    self.debug("[s]%s*** selling %f at market price of %f" % (
+                        self.simulate_or_live,
+                        gox.base2float(-vol_buy),
+                        gox.quote2float(price)))
+                    if simulate == False:
+                        gox.sell(0, -vol_buy)
 
     def cancel_orders(self):
         """cancel all rebalancing orders, we identify
@@ -134,11 +151,19 @@ class Strategy(strategy.Strategy):
     def place_orders(self):
         """place two new rebalancing orders above and below center price"""
         center = self.get_price_where_it_was_balanced()
-        self.debug(
-            "[s]center is %f" % self.gox.quote2float(center))
-        step = int(center * DISTANCE / 100.0)
+        self.debug("[s]center is %f" % self.gox.quote2float(center))
+
+        step = int(center * self.distance / 100.0)
         next_sell = mark_own(center + step)
         next_buy  = mark_own(center - step)
+        status_prefix = self.simulate_or_live
+
+        # Protect against selling below current ask price + step
+        if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
+            next_sell = self.gox.quote2int(self.ask) + step
+            self.debug("[s]next_sell at %f, self.ask at %f" % (self.gox.quote2float(next_sell), self.ask))
+        elif self.ask == 0:
+            status_prefix = 'Waiting for price - ' + self.simulate_or_live
 
         sell_amount = -self.get_buy_at_price(next_sell)
         buy_amount = self.get_buy_at_price(next_buy)
@@ -148,20 +173,31 @@ class Strategy(strategy.Strategy):
             self.debug("WARNING! minimal sell amount adjusted to 0.01")
 
         if buy_amount < 0.01 * COIN:
-            buy_amount = int(0.01 * COIN)
-            self.debug("WARNING! minimal buy amount adjusted to 0.01")
+            buy_amount = int(0.011 * COIN)
+            self.debug("WARNING! minimal buy amount adjusted to 0.011")
 
-        self.debug("[s]new buy order %f at %f" % (
+        self.debug("[s]%snew buy order %f at %f" % (
+            status_prefix,
             self.gox.base2float(buy_amount),
             self.gox.quote2float(next_buy)
         ))
-        self.gox.buy(next_buy, buy_amount)
+        if simulate == False and self.ask != 0:
+            self.gox.buy(next_buy, buy_amount)
 
-        self.debug("[s]new sell order %f at %f" % (
+        self.debug("[s]%snew sell order %f at %f" % (
+            status_prefix,
             self.gox.base2float(sell_amount),
             self.gox.quote2float(next_sell)
         ))
-        self.gox.sell(next_sell, sell_amount)
+        if simulate == False and self.ask != 0:
+            self.gox.sell(next_sell, sell_amount)
+
+    def slot_tick(self, gox, (bid, ask)):
+        # Set last ask price
+        self.ask = goxapi.int2float(ask, self.gox.orderbook.gox.currency)
+        if self.gox.orderbook.total_ask and self.ask != False and self.distance:
+            ratio = (self.gox.orderbook.total_bid / self.gox.orderbook.total_ask) / 1000
+            self.debug("ratio: %f bid/ask with %f percent target distance" % (ratio, self.distance))
 
     def slot_trade(self, gox, (date, price, volume, typ, own)):
         """a trade message has been receivd"""

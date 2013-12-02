@@ -48,7 +48,7 @@ class Strategy(goxapi.BaseObject):
         goxapi.BaseObject.__init__(self)
         self.signal_debug.connect(gox.signal_debug)
         gox.signal_keypress.connect(self.slot_keypress)
-        gox.signal_strategy_unload.connect(self.slot_before_unload)
+        # gox.signal_strategy_unload.connect(self.slot_before_unload)
         gox.signal_ticker.connect(self.slot_tick)
         gox.signal_depth.connect(self.slot_depth)
         gox.signal_trade.connect(self.slot_trade)
@@ -70,8 +70,8 @@ class Strategy(goxapi.BaseObject):
         except Exception, e:
             self.debug("[s]%s exception: %s" % (self.name, e))
 
-    def slot_before_unload(self, _sender, _data):
-        self.debug("[s]%s before unload" % self.name)
+    # def slot_before_unload(self, _sender, _data):
+    #     self.debug("[s]%s before unload" % self.name)
 
     def slot_keypress(self, gox, (key)):
         # some custom keypresses are caught here:
@@ -85,7 +85,7 @@ class Strategy(goxapi.BaseObject):
             # check if the user changed volume
             # also ensure the buy_amount does not exceed wallet balance
             # if it does, set sell_amount to wallet full BTC balance
-            walletbalance = goxapi.int2float(self.gox.wallet['BTC'], 'BTC')
+            walletbalance = gox.base2float(self.gox.wallet['BTC'])
             if volume == 0:
                 sell_amount = walletbalance
             else:
@@ -101,14 +101,14 @@ class Strategy(goxapi.BaseObject):
         elif key == ord('k'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
             for order in self.gox.orderbook.owns:
-                self.debug("[s] Orders: price %f vol %s type %s oid %s status %s" % (goxapi.int2float(order.price, gox.orderbook.gox.currency), goxapi.int2str(order.volume, "BTC"), str(order.typ), str(order.oid), str(order.status)))
+                self.debug("[s] Orders: price %f vol %s type %s oid %s status %s" % (gox.quote2float(order.price), goxapi.int2str(order.volume, "BTC"), str(order.typ), str(order.oid), str(order.status)))
 
     def slot_tick(self, gox, (bid, ask)):
         global bidbuf, askbuf, sell_amount
         # if goxapi receives a no-change tick update, don't output anything
         if bid != bidbuf or ask != askbuf:
             seen = 0   # var seen is a flag for default output below (=0)
-            self.bid = goxapi.int2float(bid, gox.orderbook.gox.currency)
+            self.bid = gox.quote2float(bid)
             if self.bid < sell_level and self.bid > sell_alert:
                 self.debug("[s] !!! SELL ALERT @ %s; bid currently at %s" % (str(sell_alert), str(self.bid)))
                 self.debug("[s] !!! SELL for %f BTC will trigger @ %f" % (sell_amount, sell_level))
@@ -146,10 +146,10 @@ class Strategy(goxapi.BaseObject):
         # the coder assumes that if an order id is received via 
         # this signal then it was not instantaneously actioned, so cancel
         # at once
-        self.debug("userorder message received: price %f volume %s typ %s oid %s status %s" % (goxapi.int2float(price, self.gox.orderbook.gox.currency), str(volume), str(typ), str(oid), str(status)))
+        self.debug("userorder message received: price %f volume %s typ %s oid %s status %s" % (gox.quote2float(price), str(volume), str(typ), str(oid), str(status)))
         # cancel by oid
         if status not in ['pending','executing','post-pending','removed'] and oid not in self.existingorders:
-            if goxapi.int2float(price, self.gox.orderbook.gox.currency) == sell_level:
+            if gox.quote2float(price) == sell_level:
                 self.gox.cancel(oid)
 
     def slot_owns_changed(self, orderbook, _dummy):
@@ -165,7 +165,7 @@ class Strategy(goxapi.BaseObject):
             # also ensure the buy_amount does not exceed wallet balance
             # if it does, set sell_amount to wallet full BTC balance
         global sell_amount
-        walletbalance = goxapi.int2float(self.gox.wallet['BTC'], 'BTC')
+        walletbalance = gox.base2float(self.gox.wallet['BTC'])
         if volume != 0 and volume <= walletbalance:
             sell_amount = volume
         else:
