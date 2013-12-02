@@ -23,21 +23,23 @@ This will create a folder named goxtool containing all the needed files. Thats a
 
 Change into to the goxtool folder that was created in the previous step and start goxtool.py:
 
+```
 cd goxtool
  ./goxtool.py
+```
 
 Keyboard commands (only the ones useful in view-only mode, without Mt.Gox account):
 
-    `q` quit
-    `l` (lower case "L") reload the strategy module (see advanced usage)
-    `D` (shift + d) switch to depth chart view
-    `H` (shift + h) switch to candlestick history chart view
-    `S` (shift + s) toggle summing up the volume of order book levels  on/off
-    `T` (shift + t) toggle summing up the volume in the depth chart on/off
-    `-` order book zoom out (increase group size)
-    `+` order book zoom in (decrease group size)
-    `,` depth chart zoom out (increase group size)
-    `.` depth chart zoom in (decrease group size)
+    * `q` quit
+    * `l` (lower case "L") reload the strategy module (see advanced usage)
+    * `D` (shift + d) switch to depth chart view
+    * `H` (shift + h) switch to candlestick history chart view
+    * `S` (shift + s) toggle summing up the volume of order book levels  on/off
+    * `T` (shift + t) toggle summing up the volume in the depth chart on/off
+    * `-` order book zoom out (increase group size)
+    * `+` order book zoom in (decrease group size)
+    * `,` depth chart zoom out (increase group size)
+    * `.` depth chart zoom in (decrease group size)
 
 (There will be even more commands once you connect it to your Mt.Gox account)
 
@@ -46,11 +48,15 @@ socketio or websocket? Which one is worse?
 
 The two options are socketio or websocket, the .ini setting for this is use_plain_old_websocket. To force it connecting with socketio:
 
-```./goxtool.py --protocol=socketio```
+```
+./goxtool.py --protocol=socketio
+```
 
  To force it connecting to the websocket server do this:
 
-```./goxtool.py --protocol=websocket```
+```
+./goxtool.py --protocol=websocket
+```
 
 It has turned out that websocket is currently the most reliable protocol. These options on the command line take precedence over what you have configured in the .ini file (but it won't change your .ini), you can make websocket the default (so you don't need this option anymore) by editing the ini file.
 
@@ -58,14 +64,18 @@ If you experience a high lag between sending an order and the ack (the op:result
 
 The following is what I am currently using and I recommend it:
 
-```./goxtool.py --protocol=websocket --use-http```
+```
+./goxtool.py --protocol=websocket --use-http
+```
 
 
 ## Trading with your MtGox account
 
 First you will need to add an API key in MtGox, then do the following:
 
-```./goxtool.py --add-secret```
+```
+./goxtool.py --add-secret
+```
 
 This will now ask you for your key, secret and a password (not your MtGox one) to secure those on your drive. The key and secret belong to a shared secret that is created by MtGox to authenticate your trading software against their API. You can request as many keys from MtGox as you need, every application you connect to your MtGox account should have its own key, you can also at any time delete the keys again that you no longer need.
 
@@ -75,10 +85,16 @@ Now MtGox will create 2 strings of cryptic numbers and letters, the "API-Key" an
 
 Now start goxtool again:
 
-```./goxtool.py```
+```
+./goxtool.py
+```
+
 
 Which will ask:
-```enter passphrase for secret:```
+
+```
+enter passphrase for secret:
+```
 
 From now on every time you start goxtool it will ask you for the passphrase in order to be able to decrypt and use the secret. Enter your passphrase, press enter. Now goxtool will start and you will notice that now it is showing your account balance at the top of the window. Now all trading functions are enabled.
 
@@ -99,7 +115,9 @@ All dialogs can be closed with `F10` or `ESC`.
 
 Running all strategies:
 
-```./goxtool.py --strategy=balancer.py,buy.py,sell.py```
+```
+./goxtool.py --strategy=balancer.py,buy.py,sell.py
+```
 
 
 #### Balancer
@@ -112,7 +130,9 @@ Portfolio rebalancing bot that will buy and sell to maintain a constant asset al
     * `c` to cancel all rebalancing orders
     * `u` to update account information, order list and wallet
  
-```./goxtool.py --strategy=balancer.py```
+```
+./goxtool.py --strategy=balancer.py
+```
 
 #### Buy strategy
 
@@ -121,7 +141,9 @@ Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` a
     * `b` to see Buy objective
     * `o` to see Buy order book
 
-```./goxtool.py --strategy=buy.py```
+```
+./goxtool.py --strategy=buy.py
+```
 
 #### Sell strategy
 
@@ -130,7 +152,9 @@ Sell strategy module. Set `sell_level` at the price you want to sell, `threshold
     * `s` to see Sell objective
     * `k` to see Sell order book
 
-```./goxtool.py --strategy=sell.py```
+```
+./goxtool.py --strategy=sell.py
+```
 
 #### Making your own
 
@@ -138,7 +162,9 @@ You can write your own trading bots. There is a file named `strategy.py`, it con
 
 If you decide to make serious use of this then please create a new python file for your strategy. either make a copy of the default strategy.py skeleton or make a module that imports strategy and has a class Strategy(strategy.Strategy), give this module file a different name and leave strategy.py alone so it won't collide with upstream changes you pull from github. By default goxtool will load strategy.py but you can start it with the --strategy command line option to specify your own strategy module or a comma separated list of many modules:
 
-```./goxtool --strategy=mybot.py,myotherbot.py```
+```
+./goxtool --strategy=mybot.py,myotherbot.py
+```
 
 You can even edit the strategy while goxtool is running and then reload it at runtime (this can be very useful), just press the l key (lowercase L) and it will do the following things:
 
@@ -158,7 +184,9 @@ How to keep it up to date
 
 Occasionally I will commit bugfixes, improvements, etc. To update your copy of goxtool (assuming you previously installed it with git clone and not by just downloading a zip file) do the following:
 
-```git pull```
+```
+git pull
+```
 
 and if that complains because of local uncommitted changes because you edited the strategy.py module or did other changes to the code then try this:
 
