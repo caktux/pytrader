@@ -9,7 +9,7 @@ Goxtool also has a simple interface to plug in your own automated trading
 strategies, your own code can be reloaded at runtime, will receive
 events from the API and can act upon them.
 
-#### Donations appreciated
+##### Donations appreciated
 prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW
 caktux (mods): 18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha
 
