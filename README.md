@@ -149,8 +149,8 @@ Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` a
 
 Sell strategy module. Set `sell_level` at the price you want to sell, `threshold` below your level for a log alert and `volume` in fiat (`0` for full balance). Set `simulate` to `False` to activate.
 
-    * `s` to see Sell objective
-    * `k` to see Sell order book
+* `s` to see Sell objective
+* `k` to see Sell order book
 
 ```
 ./goxtool.py --strategy=sell.py
