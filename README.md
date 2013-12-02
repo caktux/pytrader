@@ -30,16 +30,16 @@ cd goxtool
 
 Keyboard commands (only the ones useful in view-only mode, without Mt.Gox account):
 
-* `q` quit
-* `l` (lower case "L") reload the strategy module (see advanced usage)
-* `D` (shift + d) switch to depth chart view
-* `H` (shift + h) switch to candlestick history chart view
-* `S` (shift + s) toggle summing up the volume of order book levels  on/off
-* `T` (shift + t) toggle summing up the volume in the depth chart on/off
-* `-` order book zoom out (increase group size)
-* `+` order book zoom in (decrease group size)
-* `,` depth chart zoom out (increase group size)
-* `.` depth chart zoom in (decrease group size)
+- <kbd>q</kbd> quit
+- <kbd>l</kbd> (lower case "L") reload the strategy module (see advanced usage)
+- <kbd>D</kbd> (shift + d) switch to depth chart view
+- <kbd>H</kbd> (shift + h) switch to candlestick history chart view
+- <kbd>S</kbd> (shift + s) toggle summing up the volume of order book levels  on/off
+- <kbd>T</kbd> (shift + t) toggle summing up the volume in the depth chart on/off
+- <kbd>-</kbd> order book zoom out (increase group size)
+- <kbd>+</kbd> order book zoom in (decrease group size)
+- <kbd>,</kbd> depth chart zoom out (increase group size)
+- <kbd>.</kbd> depth chart zoom in (decrease group size)
 
 (There will be even more commands once you connect it to your Mt.Gox account)
 
@@ -100,9 +100,9 @@ From now on every time you start goxtool it will ask you for the passphrase in o
 
 Keyboard commands for trading:
 
-* `F4` : New buy order
-* `F5` : New sell order
-* `F6` : View orders / cancel order(s)
+- <kbd>F4</kbd> : New buy order
+- <kbd>F5</kbd> : New sell order
+- <kbd>F6</kbd> : View orders / cancel order(s)
 
 In the cancel dialog you can move up/down with the arrow keys, use INS to select/unselect orders (you can select multiple orders and cancel them all at once) or if you just quickly want to cancel only one order just highlight to the order and hit F8. It behaves a little bit like deleting files in midnight commander.
 
@@ -124,11 +124,11 @@ Running all strategies:
 
 Portfolio rebalancing bot that will buy and sell to maintain a constant asset allocation ratio of exactly 50/50 = fiat/BTC.
 
-* `i` for information (how much currently out of balance)
-* `r` to rebalance with market order at current price (required before rebalancing)
-* `p` to add initial rebalancing orders
-* `c` to cancel all rebalancing orders
-* `u` to update account information, order list and wallet
+- <kbd>i</kbd> for information (how much currently out of balance)
+- <kbd>r</kbd> to rebalance with market order at current price (required before rebalancing)
+- <kbd>p</kbd> to add initial rebalancing orders
+- <kbd>c</kbd> to cancel all rebalancing orders
+- <kbd>u</kbd> to update account information, order list and wallet
  
 ```
 ./goxtool.py --strategy=balancer.py
@@ -138,8 +138,8 @@ Portfolio rebalancing bot that will buy and sell to maintain a constant asset al
 
 Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` above your level for a log alert and `volume` in fiat (`0` for full balance). Set `simulate` to `False` to activate.
 
-* `b` to see Buy objective
-* `o` to see Buy order book
+* <kbd>b</kbd> to see Buy objective
+* <kbd>o</kbd> to see Buy order book
 
 ```
 ./goxtool.py --strategy=buy.py
@@ -149,8 +149,8 @@ Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` a
 
 Sell strategy module. Set `sell_level` at the price you want to sell, `threshold` below your level for a log alert and `volume` in fiat (`0` for full balance). Set `simulate` to `False` to activate.
 
-* `s` to see Sell objective
-* `k` to see Sell order book
+- <kbd>s</kbd> to see Sell objective
+- <kbd>k</kbd> to see Sell order book
 
 ```
 ./goxtool.py --strategy=sell.py
