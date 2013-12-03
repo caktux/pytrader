@@ -40,6 +40,7 @@ class Strategy(strategy.Strategy):
     """a portfolio rebalancing bot"""
     def __init__(self, gox):
         strategy.Strategy.__init__(self, gox)
+        self.bid = 0
         self.ask = 0
         self.simulate_or_live = simulate_or_live
         self.distance = DISTANCE
@@ -137,16 +138,19 @@ class Strategy(strategy.Strategy):
     def get_buy_at_price(self, price_int):
         """calculate amount of BTC needed to buy at price to achieve
         rebalancing. price and return value are in mtgox integer format"""
-        gox = self.gox
-        fiat_have = gox.quote2float(gox.wallet[gox.curr_quote]) + FIAT_COLD
-        btc_have  = gox.base2float(gox.wallet[gox.curr_base]) + COIN_COLD
-        price_then = gox.quote2float(price_int)
-
-        btc_value_then = btc_have * price_then
+        fiat_have = self.gox.quote2float(self.gox.wallet[self.gox.curr_quote]) + FIAT_COLD
+        btc_value_then = self.get_btc_value(price_int)
+        price_then = self.gox.quote2float(price_int)
         diff = fiat_have - btc_value_then
         diff_btc = diff / price_then
         must_buy = diff_btc / 2
         return self.gox.base2int(must_buy)
+
+    def get_btc_value(self, price_int):
+        btc_have  = self.gox.base2float(self.gox.wallet[self.gox.curr_base]) + COIN_COLD
+        price_then = self.gox.quote2float(price_int)
+        btc_value_then = btc_have * price_then
+        return btc_value_then
 
     def place_orders(self):
         """place two new rebalancing orders above and below center price"""
@@ -158,12 +162,21 @@ class Strategy(strategy.Strategy):
         next_buy  = mark_own(center - step)
         status_prefix = self.simulate_or_live
 
-        # Protect against selling below current ask price + step
+        # Protect against selling below current ask price
         if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
-            next_sell = mark_own(self.gox.quote2int(self.ask) + step)
-            self.debug("[s]next_sell at %f, self.ask at %f" % (self.gox.quote2float(next_sell), self.ask))
+            bad_next_sell = float(next_sell)
+            next_sell = mark_own(self.gox.quote2int(self.ask) + (step / 2))
+            self.debug("[s]corrected next sell at %f instead of %f, ask price at %f" % (bad_next_sell, self.gox.quote2float(next_sell), self.ask))
         elif self.ask == 0:
-            status_prefix = 'Waiting for price, skipped ' + self.simulate_or_live
+            status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
+
+        # Protect against buying above current bid price
+        if self.bid != 0 and self.gox.quote2float(next_buy) > self.bid:
+            bad_next_buy = float(next_buy)
+            next_buy = mark_own(self.gox.quote2int(self.bid) - (step / 2))
+            self.debug("[s]corrected next buy at %f instead of %f, ask price at %f" % (bad_next_buy, self.gox.quote2float(next_buy), self.bid))
+        elif self.bid == 0:
+            status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
 
         sell_amount = -self.get_buy_at_price(next_sell)
         buy_amount = self.get_buy_at_price(next_buy)
@@ -193,11 +206,9 @@ class Strategy(strategy.Strategy):
             self.gox.sell(next_sell, sell_amount)
 
     def slot_tick(self, gox, (bid, ask)):
-        # Set last ask price
+        # Set last bid/ask price
+        self.bid = goxapi.int2float(bid, self.gox.orderbook.gox.currency)
         self.ask = goxapi.int2float(ask, self.gox.orderbook.gox.currency)
-        if self.gox.orderbook.total_ask and self.ask != False and self.distance:
-            ratio = (self.gox.orderbook.total_bid / self.gox.orderbook.total_ask) / 1000
-            self.debug("ratio: %f bid/ask with %f percent target distance" % (ratio, self.distance))
 
     def slot_trade(self, gox, (date, price, volume, typ, own)):
         """a trade message has been receivd"""

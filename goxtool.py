@@ -1738,9 +1738,11 @@ def main():
                     print trb
             else:
                 print
-                print "*******************************************************"
-                print "*  Please donate: 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW  *"
-                print "*******************************************************"
+                print "**************************************************************"
+                print "*  Please donate! :)                                         *"
+                print "*    prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW  *"
+                print "*    caktux (mods):      18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha  *"
+                print "**************************************************************"
 
 if __name__ == "__main__":
     main()
