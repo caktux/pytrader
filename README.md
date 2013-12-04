@@ -120,6 +120,7 @@ Running all strategies:
 Portfolio rebalancing bot that will buy and sell to maintain a constant asset allocation ratio of exactly 50/50 = fiat/BTC.
 
 - <kbd>i</kbd> for information (how much currently out of balance)
+- <kbd>o</kbd> to see order book
 - <kbd>r</kbd> to rebalance with market order at current price (required before rebalancing)
 - <kbd>p</kbd> to add initial rebalancing orders
 - <kbd>c</kbd> to cancel all rebalancing orders
@@ -134,7 +135,6 @@ Portfolio rebalancing bot that will buy and sell to maintain a constant asset al
 Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` above your level for a log alert and `volume` in fiat (`0` for full balance). Set `simulate` to `False` to activate.
 
 * <kbd>b</kbd> to see Buy objective
-* <kbd>o</kbd> to see Buy order book
 
 ```
 ./goxtool.py --strategy=buy.py
@@ -145,7 +145,6 @@ Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` a
 Sell strategy module. Set `sell_level` at the price you want to sell, `threshold` below your level for a log alert and `volume` in fiat (`0` for full balance). Set `simulate` to `False` to activate.
 
 - <kbd>s</kbd> to see Sell objective
-- <kbd>k</kbd> to see Sell order book
 
 ```
 ./goxtool.py --strategy=sell.py

@@ -58,7 +58,7 @@ class Strategy(goxapi.BaseObject):
         self.gox = gox
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s loaded" % self.name)
-        self.debug("[s]Press 'b' to see Buy objective\n Press 'o' to see Buy order book")
+        self.debug("[s]Press 'b' to see Buy objective")
         #get existing orders for later decision making
         self.existingorders = []
         for order in self.gox.orderbook.owns:
@@ -98,10 +98,6 @@ class Strategy(goxapi.BaseObject):
             # else:
             #     buy_amount = walletbalance
             self.debug("[s] %sstrategy will spend %f of %f %s on next BUY" % (simulate_or_live, buy_amount, walletbalance, str(self.gox.orderbook.gox.currency)))
-        elif key == ord('o'):
-            self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
-            for order in self.gox.orderbook.owns:
-                self.debug("[s] Orders: price %f vol %s type %s oid %s status %s" % (gox.quote2float(order.price), goxapi.int2str(order.volume, "BTC"), str(order.typ), str(order.oid), str(order.status)))
 
     def slot_tick(self, gox, (bid, ask)):
         global bidbuf, askbuf, buy_amount

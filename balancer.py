@@ -48,7 +48,13 @@ class Strategy(strategy.Strategy):
         self.temp_halt = False
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s loaded" % self.name)
-        self.debug("[s]Press 'i' for information (how much currently out of balance)\n WARNING Rebalancing will buy or sell up to half your fiat or BTC balance\n Press 'r' to rebalance with market order at current price (required before rebalancing)\n Press 'p' to add initial rebalancing orders and start trading\n Press 'c' to cancel all rebalancing orders and suspend trading\n Press 'u' to update account information, order list and wallet")
+        self.debug("[s]Press 'i' for information (how much currently out of balance)")
+        self.debug("[s]Press 'o' to see order book")
+        self.debug("[s]WARNING Rebalancing will buy or sell up to half your fiat or BTC balance")
+        self.debug("[s]Press 'r' to rebalance with market order at current price (recommended before rebalancing)")
+        self.debug("[s]Press 'p' to add initial rebalancing orders and start trading")
+        self.debug("[s]Press 'c' to cancel all rebalancing orders and suspend trading")
+        self.debug("[s]Press 'u' to update account information, order list and wallet")
 
     def __del__(self):
         try:
@@ -61,7 +67,7 @@ class Strategy(strategy.Strategy):
 
         if key == ord("c"):
             # cancel existing rebalancing orders and suspend trading
-            self.debug("[s]canceling all rebalancing orders")
+            self.debug("[s]%scanceling all rebalancing orders" % self.simulate_or_live)
             self.temp_halt = True
             self.cancel_orders()
 
@@ -70,8 +76,9 @@ class Strategy(strategy.Strategy):
             # Before you do this the portfolio should already be balanced.
             # use "i" to show current status and "b" to rebalance with a
             # market order at current price.
-            self.debug("[s]adding new initial rebalancing orders")
+            self.debug("[s]%sadding new initial rebalancing orders" % self.simulate_or_live)
             self.temp_halt = False
+            self.cancel_orders()
             self.place_orders()
 
         if key == ord("u"):
@@ -89,6 +96,11 @@ class Strategy(strategy.Strategy):
                 gox.base2float(vol_buy))
             self.debug("[s]Price where it would be balanced:",
                 gox.quote2float(price_balanced))
+
+        if key == ord('o'):
+            self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
+            for order in self.gox.orderbook.owns:
+                self.debug("[s] Order: price %f vol %f BTC type %s oid %s status %s" % (gox.quote2float(order.price), gox.base2float(order.volume), str(order.typ), str(order.oid), str(order.status)))
 
         if key == ord("r"):
             # manually rebalance with market order at current price
@@ -121,7 +133,8 @@ class Strategy(strategy.Strategy):
                 must_cancel.append(order)
 
         for order in must_cancel:
-            self.gox.cancel(order.oid)
+            if (simulate == False):
+                self.gox.cancel(order.oid)
 
     def get_price_where_it_was_balanced(self):
         """get the price at which it was perfectly balanced, given the current
@@ -131,8 +144,12 @@ class Strategy(strategy.Strategy):
         so even after missing the trade message due to disconnect it should be
         possible to place the next 2 orders precisely around the new center"""
         gox = self.gox
-        fiat_have = gox.quote2float(gox.wallet[gox.curr_quote]) + FIAT_COLD
-        btc_have  = gox.base2float(gox.wallet[gox.curr_base]) + COIN_COLD
+        if (gox.wallet):
+            fiat_have = gox.quote2float(gox.wallet[gox.curr_quote]) + FIAT_COLD
+            btc_have  = gox.base2float(gox.wallet[gox.curr_base]) + COIN_COLD
+        else:
+            self.debug('[s]Waiting for price...')
+            return False
         return gox.quote2int(fiat_have / btc_have)
 
     def get_buy_at_price(self, price_int):
@@ -155,7 +172,10 @@ class Strategy(strategy.Strategy):
     def place_orders(self):
         """place two new rebalancing orders above and below center price"""
         center = self.get_price_where_it_was_balanced()
-        self.debug("[s]center is %f" % self.gox.quote2float(center))
+        if center:
+            self.debug("[s]center is %f" % self.gox.quote2float(center))
+        else:
+            return
 
         step = int(center * self.distance / 100.0)
         next_sell = mark_own(center + step)
@@ -183,11 +203,11 @@ class Strategy(strategy.Strategy):
 
         if sell_amount < 0.01 * COIN:
             sell_amount = int(0.01 * COIN)
-            self.debug("WARNING! minimal sell amount adjusted to 0.01")
+            self.debug("[s]WARNING! minimal sell amount adjusted to 0.01")
 
         if buy_amount < 0.01 * COIN:
             buy_amount = int(0.011 * COIN)
-            self.debug("WARNING! minimal buy amount adjusted to 0.011")
+            self.debug("[s]WARNING! minimal buy amount adjusted to 0.011")
 
         self.debug("[s]%snew buy order %f at %f" % (
             status_prefix,

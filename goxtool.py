@@ -48,10 +48,11 @@ HEIGHT_STATUS   = 2
 HEIGHT_CON      = 20
 WIDTH_ORDERBOOK = 45
 
-COLORS =    [["con_text",       curses.COLOR_BLUE,    curses.COLOR_CYAN]
-            ,["con_text_buy",   curses.COLOR_BLUE,    curses.COLOR_GREEN]
-            ,["con_text_sell",  curses.COLOR_BLUE,    curses.COLOR_RED]
-            ,["status_text",    curses.COLOR_BLUE,    curses.COLOR_CYAN]
+COLORS =    [["con_text",       curses.COLOR_BLACK,    curses.COLOR_WHITE]
+            ,["con_text_buy",   curses.COLOR_BLACK,    curses.COLOR_GREEN]
+            ,["con_text_sell",  curses.COLOR_BLACK,    curses.COLOR_RED]
+            ,["con_separator",  curses.COLOR_BLUE,     curses.COLOR_WHITE]
+            ,["status_text",    curses.COLOR_BLACK,    curses.COLOR_WHITE]
 
             ,["book_text",      curses.COLOR_BLACK,   curses.COLOR_CYAN]
             ,["book_bid",       curses.COLOR_BLACK,   curses.COLOR_GREEN]
@@ -201,7 +202,7 @@ class Win:
         self.__create_win()
 
     def addstr(self, *args):
-        """drop-in replacement for addstr that will never raie exceptions
+        """drop-in replacement for addstr that will never raise exceptions
         and that will cut off at end of line instead of wrapping"""
         if len(args) > 0:
             line, col = self.win.getyx()
@@ -284,7 +285,7 @@ class WinConsole(Win):
     def calc_size(self):
         """put it at the bottom of the screen"""
         self.height = HEIGHT_CON
-        self.width = self.termwidth - int(self.termwidth / 2) - 1
+        self.width = self.termwidth - int(self.termwidth / 2) - 2
         self.posy = self.termheight - self.height
 
     def slot_debug(self, dummy_gox, (txt)):
@@ -333,6 +334,8 @@ class PluginConsole(Win):
     def paint(self):
         """just empty the window after resize (I am lazy)"""
         self.win.bkgd(" ", COLOR_PAIR["con_text"])
+        for i in range(HEIGHT_CON):
+            self.win.addstr("\n ",  COLOR_PAIR["con_separator"])
 
     def resize(self):
         """resize and print a log message. Old messages will have been
@@ -356,7 +359,8 @@ class PluginConsole(Win):
 
     def write(self, txt):
         """write a line of text, scroll if needed"""
-        self.win.addstr("\n" + txt,  COLOR_PAIR["con_text"])
+        self.win.addstr("\n ",  COLOR_PAIR["con_separator"])
+        self.win.addstr(txt,  COLOR_PAIR["con_text"])
         self.done_paint()
 
 
@@ -988,18 +992,31 @@ class WinStatus(Win):
         #
         # first line
         #
-        line1 = "Market: %s%s | " % (cbase, cquote)
-        line1 += "Account: "
+        self.addstr(0, 0, "Price: ", COLOR_PAIR["status_text"])
+        self.addstr("%f" % self.gox.quote2float(self.gox.orderbook.bid), COLOR_PAIR["status_text"] + curses.A_BOLD)
+        self.addstr(" - ", COLOR_PAIR["status_text"])
+        self.addstr("%f" % self.gox.quote2float(self.gox.orderbook.ask), COLOR_PAIR["status_text"] + curses.A_BOLD)
+
+        self.addstr(" | Market: ", COLOR_PAIR["status_text"])
+        self.addstr("%s%s" % (cbase, cquote), COLOR_PAIR["status_text"] + curses.A_BOLD)
+
+        self.addstr(" | Account: ", COLOR_PAIR["status_text"])
         if len(self.sorted_currency_list):
+            own_currencies = []
             for currency in self.sorted_currency_list:
                 if currency in self.gox.wallet:
-                    line1 += currency + " " \
-                    + goxapi.int2str(self.gox.wallet[currency], currency).strip() \
-                    + " + "
-            line1 = line1.strip(" +")
-            line1 += " | Fee: " + ("%f" % self.gox.trade_fee)
+                    own_currencies.append(currency)
+            for c, own_currency in enumerate(own_currencies):
+                self.addstr("%s" % own_currency, COLOR_PAIR["status_text"] + curses.A_BOLD)
+                self.addstr(" ", COLOR_PAIR["status_text"])
+                self.addstr("%f" % goxapi.int2float(self.gox.wallet[own_currency], own_currency), COLOR_PAIR["status_text"] + curses.A_BOLD)
+                if (c + 1 != len(own_currencies)):
+                    self.addstr(" + ", COLOR_PAIR["status_text"])
+            self.addstr(" | Fee: ", COLOR_PAIR["status_text"])
+            self.addstr("%s" % self.gox.trade_fee, COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr(" %", COLOR_PAIR["status_text"])
         else:
-            line1 += "No info (yet)"
+            self.addstr("No info (yet)", COLOR_PAIR["status_text"] + curses.A_BOLD)
 
         #
         # second line
@@ -1020,7 +1037,8 @@ class WinStatus(Win):
 
         line2 += "o_lag: %s | " % self.order_lag_txt
         line2 += "s_lag: %.3f s" % (self.gox.socket_lag / 1e6)
-        self.addstr(0, 0, line1, COLOR_PAIR["status_text"])
+
+        # self.addstr(0, 0, line1, COLOR_PAIR["status_text"])
         self.addstr(1, 0, line2, COLOR_PAIR["status_text"])
 
 
