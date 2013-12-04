@@ -9,7 +9,7 @@ Goxtool also has a simple interface to plug in your own automated trading strate
 
 Open a terminal in an empty folder or in the folder you usually use to clone repositories and clone the master branch:
 
-```git clone git://github.com/USERNAME/goxtool.git```
+```git clone git://github.com/caktux/goxtool.git```
 
 This will create a folder named goxtool containing all the needed files. Thats all, now it is installed and ready to use. You can now already watch live market data (without any trading functions being enabled), you can later add a MtGox API-key to it to have full access to your account but for now just proceed to the next step, start it without an account, just to make sure everything works.
 
