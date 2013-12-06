@@ -18,7 +18,7 @@ conf.setdefault('balancer_coin_cold', 0)
 conf.setdefault('balancer_marker', 7)
 
 # Simulate
-simulate = bool(conf['balancer_simulate'])
+simulate = int(conf['balancer_simulate'])
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else '')
