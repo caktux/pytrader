@@ -203,7 +203,7 @@ class Strategy(strategy.Strategy):
         # We only add half of the fee to distribute it 50/50 to both balances.
         # (for this to work the MtGox fee settings must be at default: take
         # the fee from BTC after buying and take it from USD after selling)
-        if conf['balancer_compensate_fees']:
+        if int(conf['balancer_compensate_fees']):
             must_buy *= (1 + self.gox.trade_fee / 200)
 
         # convert into satoshi integer
