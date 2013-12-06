@@ -3,6 +3,11 @@ The portfolio rebalancing bot will buy and sell to maintain a
 constant asset allocation ratio of exactly 50/50 = fiat/BTC
 """
 
+# line too long             - pylint: disable=C0301
+# too many local variables  - pylint: disable=R0914
+
+import glob
+import time
 import goxapi
 import strategy
 import simplejson as json
@@ -16,12 +21,13 @@ conf.setdefault('balancer_distance', 7)
 conf.setdefault('balancer_fiat_cold', 0)
 conf.setdefault('balancer_coin_cold', 0)
 conf.setdefault('balancer_marker', 7)
+conf.setdefault('balancer_compensate_fees', False)
 
 # Simulate
-simulate = int(conf['balancer_simulate'])
+SIMULATE = int(conf['balancer_simulate'])
 
 # Live or simulation notice
-simulate_or_live = ('SIMULATION - ' if simulate else '')
+SIMULATE_OR_LIVE = 'SIMULATION - ' if SIMULATE else ''
 
 DISTANCE    = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
 FIAT_COLD   = float(conf['balancer_fiat_cold']) # Amount of Fiat stored at home but included in calculations
@@ -46,6 +52,11 @@ def is_own(price):
     """return true if this price has our own marker"""
     return has_marker(price, MARKER)
 
+def write_log(txt):
+    """write line to a separate logfile"""
+    with open("_balancer.log", "a") as logfile:
+        logfile.write(txt + "\n")
+
 
 class Strategy(strategy.Strategy):
     """a portfolio rebalancing bot"""
@@ -53,7 +64,7 @@ class Strategy(strategy.Strategy):
         strategy.Strategy.__init__(self, gox)
         self.bid = 0
         self.ask = 0
-        self.simulate_or_live = simulate_or_live
+        self.simulate_or_live = SIMULATE_OR_LIVE
         self.distance = DISTANCE
         self.init_distance = float(DISTANCE)
         self.temp_halt = False
@@ -102,11 +113,23 @@ class Strategy(strategy.Strategy):
             # current status (how much currently out of balance)
             price = (gox.orderbook.bid + gox.orderbook.ask) / 2
             vol_buy = self.get_buy_at_price(price)
+
             price_balanced = self.get_price_where_it_was_balanced()
+            step_factor = 1 + self.distance / 100.0
+            price_sell = self.get_next_sell_price(price_balanced, step_factor)
+            price_buy = self.get_next_buy_price(price_balanced, step_factor)
+
             self.debug("[s]BTC difference at current price:",
                 gox.base2float(vol_buy))
             self.debug("[s]Price where it would be balanced:",
                 gox.quote2float(price_balanced))
+            self.debug("[s]Next two orders would be at:",
+                gox.quote2float(price_sell),
+                gox.quote2float(price_buy))
+
+            vol = gox.base2float(gox.monthly_volume)
+            fee = gox.trade_fee
+            self.debug("monthly volume: %g / trade fee: %g%%" % (vol, fee))
 
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
@@ -125,14 +148,14 @@ class Strategy(strategy.Strategy):
                         self.simulate_or_live,
                         gox.base2float(vol_buy),
                         gox.quote2float(price)))
-                    if simulate == False:
+                    if SIMULATE == False:
                         gox.buy(0, vol_buy)
                 else:
                     self.debug("[s]%sselling %f at market price of %f" % (
                         self.simulate_or_live,
                         gox.base2float(-vol_buy),
                         gox.quote2float(price)))
-                    if simulate == False:
+                    if SIMULATE == False:
                         gox.sell(0, -vol_buy)
 
     def cancel_orders(self):
@@ -144,7 +167,7 @@ class Strategy(strategy.Strategy):
                 must_cancel.append(order)
 
         for order in must_cancel:
-            if (simulate == False):
+            if (SIMULATE == False):
                 self.gox.cancel(order.oid)
 
     def get_price_where_it_was_balanced(self):
@@ -164,17 +187,32 @@ class Strategy(strategy.Strategy):
         return gox.quote2int(fiat_have / btc_have)
 
     def get_buy_at_price(self, price_int):
-        """calculate amount of BTC needed to buy at price to achieve
-        rebalancing. price and return value are in mtgox integer format"""
+        """calculate amount of BTC needed to buy at price to achieve rebalancing.
+        Negative return value means we need to sell. price and return value is
+        in MtGox integer format"""
+
         fiat_have = self.gox.quote2float(self.gox.wallet[self.gox.curr_quote]) + FIAT_COLD
         btc_value_then = self.get_btc_value(price_int)
         price_then = self.gox.quote2float(price_int)
         diff = fiat_have - btc_value_then
         diff_btc = diff / price_then
         must_buy = diff_btc / 2
-        return self.gox.base2int(must_buy)
+
+        # Now compensate the fees: if its a buy then buy a little bit more,
+        # if its a sell (must_buy is negative) then sell a little bit more.
+        # We only add half of the fee to distribute it 50/50 to both balances.
+        # (for this to work the MtGox fee settings must be at default: take
+        # the fee from BTC after buying and take it from USD after selling)
+        if conf['balancer_compensate_fees']:
+            must_buy *= (1 + self.gox.trade_fee / 200)
+
+        # convert into satoshi integer
+        must_buy_int = self.gox.base2int(must_buy)
+
+        return must_buy_int
 
     def get_btc_value(self, price_int):
+        """get total btc value in fiat at current price"""
         btc_have  = self.gox.base2float(self.gox.wallet[self.gox.curr_base]) + COIN_COLD
         price_then = self.gox.quote2float(price_int)
         btc_value_then = btc_have * price_then
@@ -188,14 +226,17 @@ class Strategy(strategy.Strategy):
         else:
             return
 
-        step = int(center * self.distance / 100.0)
-        next_sell = mark_own(center + step)
-        next_buy  = mark_own(center - step)
+        step_factor = 1 + self.distance / 100.0
+
+        next_sell = self.get_next_sell_price(center, step_factor)
+        next_buy = self.get_next_buy_price(center, step_factor)
+
         status_prefix = self.simulate_or_live
 
         # Protect against selling below current ask price
         if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
             bad_next_sell = float(next_sell)
+            step = int(center * self.distance / 100.0)
             next_sell = mark_own(self.gox.quote2int(self.ask) + (step / 2))
             self.debug("[s]corrected next sell at %f instead of %f, ask price at %f" % (self.gox.quote2float(next_sell), self.gox.quote2float(bad_next_sell), self.ask))
         elif self.ask == 0:
@@ -204,6 +245,7 @@ class Strategy(strategy.Strategy):
         # Protect against buying above current bid price
         if self.bid != 0 and self.gox.quote2float(next_buy) > self.bid:
             bad_next_buy = float(next_buy)
+            step = int(center * self.distance / 100.0)
             next_buy = mark_own(self.gox.quote2int(self.bid) - (step / 2))
             self.debug("[s]corrected next buy at %f instead of %f, ask price at %f" % (self.gox.quote2float(next_buy), self.gox.quote2float(bad_next_buy), self.bid))
         elif self.bid == 0:
@@ -225,7 +267,7 @@ class Strategy(strategy.Strategy):
             self.gox.base2float(buy_amount),
             self.gox.quote2float(next_buy)
         ))
-        if simulate == False and self.ask != 0:
+        if SIMULATE == False and self.ask != 0:
             self.gox.buy(next_buy, buy_amount)
 
         self.debug("[s]%snew sell order %f at %f" % (
@@ -233,8 +275,17 @@ class Strategy(strategy.Strategy):
             self.gox.base2float(sell_amount),
             self.gox.quote2float(next_sell)
         ))
-        if simulate == False and self.ask != 0:
+        if SIMULATE == False and self.ask != 0:
             self.gox.sell(next_sell, sell_amount)
+
+        # write some account information to a separate log file
+        datetime = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+        write_log('"%s", %f, %f, %s' % (
+            datetime,
+            self.gox.quote2float(center),
+            self.gox.quote2float(self.gox.wallet[self.gox.curr_quote]) + FIAT_COLD,
+            self.gox.base2float(self.gox.wallet[self.gox.curr_base]) + COIN_COLD
+        ))
 
     def slot_tick(self, gox, (bid, ask)):
         # Set last bid/ask price
@@ -270,6 +321,13 @@ class Strategy(strategy.Strategy):
         if self.temp_halt:
             return
 
+        # right after initial connection we have no
+        # wallet yet, we cannot trade anyways without that,
+        # must wait until private/info is received.
+        if self.gox.wallet == {}:
+            self.debug('[s]Waiting for info...')
+            return
+
         # still waiting for submitted orders,
         # can wait for next signal
         if self.gox.count_submitted:
@@ -297,3 +355,42 @@ class Strategy(strategy.Strategy):
         if count == 1:
             self.cancel_orders()
             self.place_orders()
+
+    def get_next_buy_price(self, center, step_factor):
+        """get the next buy price. If there is a forced price level
+        then it will return that, otherwise return center - step"""
+        price = self.get_forced_price(center, False)
+        if not price:
+            price = mark_own(int(round(center / step_factor)))
+        return price
+
+    def get_next_sell_price(self, center, step_factor):
+        """get the next sell price. If there is a forced price level
+        then it will return that, otherwise return center + step"""
+        price = self.get_forced_price(center, True)
+        if not price:
+            price = mark_own(int(round(center * step_factor)))
+        return price
+
+    def get_forced_price(self, center, need_ask):
+        """get externally forced price level for order"""
+        prices = []
+        found = glob.glob("_balancer_force_*")
+        if len(found):
+            for name in found:
+                try:
+                    price = self.gox.quote2int(float(name.split("_")[3]))
+                    prices.append(price)
+                except: #pylint: disable=W0702
+                    pass
+            prices.sort()
+            if need_ask:
+                for price in prices:
+                    if price > center * 1.005:
+                        return mark_own(price)
+            else:
+                for price in reversed(prices):
+                    if price < center * 0.995:
+                        return mark_own(price)
+
+        return None

@@ -1548,8 +1548,8 @@ def set_ini(gox, setting, value, signal, signal_sender, signal_params):
 
 def main():
     """main funtion, called at the start of the program"""
-
     debug_tb = []
+
     def curses_loop(stdscr):
         """Only the code inside this function runs within the curses wrapper"""
 
@@ -1562,6 +1562,7 @@ def main():
         # we can print them.
         try:
             init_colors()
+
             gox = goxapi.Gox(secret, config)
 
             logwriter = LogWriter(gox)
@@ -1576,6 +1577,7 @@ def main():
             strategy_manager = StrategyManager(gox, strat_mod_list)
 
             gox.start()
+
             while True:
                 key = stdscr.getch()
                 if key == ord("q"):
@@ -1643,6 +1645,7 @@ def main():
         # Before we do anything we dump stacktraces of all currently running
         # threads to a separate logfile because this helps debugging freezes
         # and deadlocks that might occur if things went totally wrong.
+
         with open("goxtool.stacktrace.log", "w") as stacklog:
             stacklog.write(dump_all_stacks())
 
@@ -1741,14 +1744,9 @@ def main():
 
         # if its ok then we can finally enter the curses main loop
         if secret.prompt_decrypt() != secret.S_FAIL_FATAL:
-
-            ###
-            #
-            # now going to enter cbreak mode and start the curses loop...
+            # Use curses wrapper
             curses.wrapper(curses_loop)
             # curses ended, terminal is back in normal (cooked) mode
-            #
-            ###
 
             if len(debug_tb):
                 print "\n\n*** error(s) in curses_loop() that caused unclean shutdown:\n"
