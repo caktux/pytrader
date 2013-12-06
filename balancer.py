@@ -129,7 +129,7 @@ class Strategy(strategy.Strategy):
 
             vol = gox.base2float(gox.monthly_volume)
             fee = gox.trade_fee
-            self.debug("monthly volume: %g / trade fee: %g%%" % (vol, fee))
+            self.debug("[s]Monthly volume: %g BTC / trade fee: %g%%" % (vol, fee))
 
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
