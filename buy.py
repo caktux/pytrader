@@ -37,7 +37,7 @@ conf.setdefault('buy_volume', 1)
 conf.setdefault('buy_alert', 100)
 
 # Simulate
-simulate = conf['buy_simulate']
+simulate = bool(conf['buy_simulate'])
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')

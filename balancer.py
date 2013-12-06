@@ -18,16 +18,16 @@ conf.setdefault('balancer_coin_cold', 0)
 conf.setdefault('balancer_marker', 7)
 
 # Simulate
-simulate = conf['balancer_simulate']
+simulate = bool(conf['balancer_simulate'])
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else '')
 
-DISTANCE    = conf['balancer_distance']  # percent price distance of next rebalancing orders
-FIAT_COLD   = conf['balancer_fiat_cold'] # Amount of Fiat stored at home but included in calculations
-COIN_COLD   = conf['balancer_coin_cold'] # Amount of Coin stored at home but included in calculations
+DISTANCE    = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
+FIAT_COLD   = float(conf['balancer_fiat_cold']) # Amount of Fiat stored at home but included in calculations
+COIN_COLD   = float(conf['balancer_coin_cold']) # Amount of Coin stored at home but included in calculations
 
-MARKER      = conf['balancer_marker']    # lowest digit of price to identify bot's own orders
+MARKER      = int(conf['balancer_marker'])    # lowest digit of price to identify bot's own orders
 COIN        = 1E8   # number of satoshi per coin, this is a constant.
 
 def add_marker(price, marker):
