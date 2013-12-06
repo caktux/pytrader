@@ -13,11 +13,11 @@ Other keypresses are defined in the 'slot_keypress' function below.
 Activate this strategy's BUY functionality by switching 'simulate' to False
 Test first before enabling the BUY function!
 
-Note: the goxtool.py application swallows most Python exceptions 
+Note: the goxtool.py application swallows most Python exceptions
 and outputs them to the status window and goxtool.log (in app folder).
 This complicates tracing of runtime errors somewhat, but
-to keep an eye on such it is recommended that the developer runs 
-an additional terminal with 'tail -f ./goxtool.log' to see 
+to keep an eye on such it is recommended that the developer runs
+an additional terminal with 'tail -f ./goxtool.log' to see
 continuous logfile output.
 
 coded by tarzan (c) April 2013, modified by caktux
@@ -25,9 +25,19 @@ copying & distribution allowed - attribution appreciated
 """
 
 import goxapi
+import simplejson as json
+
+# Load user.conf
+conf = json.load(open("user.conf"))
+
+# Set defaults
+conf.setdefault('buy_simulate', True)
+conf.setdefault('buy_level', 1)
+conf.setdefault('buy_volume', 1)
+conf.setdefault('buy_alert', 100)
 
 # Simulate
-simulate = True
+simulate = conf['buy_simulate']
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
@@ -36,10 +46,10 @@ simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
 global bidbuf, askbuf # comparators to avoid redundant bid/ask output
 bidbuf = 0
 askbuf = 0
-buy_level = float(1) # price at which you want to buy BTC
-threshold = float(100) # alert price distance from buy_level
+buy_level = float(conf['buy_level']) # price at which you want to buy BTC
+threshold = float(conf['buy_alert']) # alert price distance from buy_level
 buy_alert = float(buy_level + threshold) # alert level for user info
-volume = float(1) # user specified fiat amout as volume, set 0 to use wallet full fiat balance
+volume = float(conf['buy_volume']) # user specified fiat amount as volume, set to 0 to use full fiat balance
 
 class Strategy(goxapi.BaseObject):
     # pylint: disable=C0111,W0613,R0201
@@ -107,7 +117,7 @@ class Strategy(goxapi.BaseObject):
             self.ask = gox.quote2float(ask)
             if self.ask > buy_level and self.ask < buy_alert:
                 self.debug("[s] !!! buy ALERT @ %s; ask currently at %s" % (str(buy_alert), str(self.ask)))
-                self.debug("[s] !!! BUY for %f %s will trigger @ %f" % (buy_amount,str(self.gox.orderbook.gox.currency), buy_level))
+                self.debug("[s] !!! BUY for %f %s will trigger @ %f" % (buy_amount, str(self.gox.orderbook.gox.currency), buy_level))
                 seen = 1
             elif self.ask <= buy_level:
                 # this is the condition to action gox.buy()
@@ -144,7 +154,7 @@ class Strategy(goxapi.BaseObject):
         # at once
         self.debug("userorder message received: price %f volume %s typ %s oid %s status %s" % (gox.quote2float(price), str(volume), str(typ), str(oid), str(status)))
         # cancel by oid
-        if status not in ['pending','executing','post-pending','removed'] and oid not in self.existingorders:
+        if status not in ['pending', 'executing', 'post-pending', 'removed'] and oid not in self.existingorders:
             if gox.quote2float(price) == buy_level:
                 self.gox.cancel(oid)
 

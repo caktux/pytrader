@@ -5,18 +5,29 @@ constant asset allocation ratio of exactly 50/50 = fiat/BTC
 
 import goxapi
 import strategy
+import simplejson as json
+
+# Load user.conf
+conf = json.load(open("user.conf"))
+
+# Set defaults
+conf.setdefault('balancer_simulate', True)
+conf.setdefault('balancer_distance', 7)
+conf.setdefault('balancer_fiat_cold', 0)
+conf.setdefault('balancer_coin_cold', 0)
+conf.setdefault('balancer_marker', 7)
 
 # Simulate
-simulate = True
+simulate = conf['balancer_simulate']
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else '')
 
-DISTANCE    = 7     # percent price distance of next rebalancing orders
-FIAT_COLD   = 0     # Amount of Fiat stored at home but included in calculations
-COIN_COLD   = 0     # Amount of Coin stored at home but included in calculations
+DISTANCE    = conf['balancer_distance']  # percent price distance of next rebalancing orders
+FIAT_COLD   = conf['balancer_fiat_cold'] # Amount of Fiat stored at home but included in calculations
+COIN_COLD   = conf['balancer_coin_cold'] # Amount of Coin stored at home but included in calculations
 
-MARKER      = 7     # lowest digit of price to identify bot's own orders
+MARKER      = conf['balancer_marker']    # lowest digit of price to identify bot's own orders
 COIN        = 1E8   # number of satoshi per coin, this is a constant.
 
 def add_marker(price, marker):
@@ -100,7 +111,7 @@ class Strategy(strategy.Strategy):
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
             for order in self.gox.orderbook.owns:
-                self.debug("[s] Order: price %f vol %f BTC type %s oid %s status %s" % (gox.quote2float(order.price), gox.base2float(order.volume), str(order.typ), str(order.oid), str(order.status)))
+                self.debug("[s]  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), gox.base2str(order.volume), gox.quote2str(order.price), str(order.oid)))
 
         if key == ord("r"):
             # manually rebalance with market order at current price
@@ -186,7 +197,7 @@ class Strategy(strategy.Strategy):
         if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
             bad_next_sell = float(next_sell)
             next_sell = mark_own(self.gox.quote2int(self.ask) + (step / 2))
-            self.debug("[s]corrected next sell at %f instead of %f, ask price at %f" % (bad_next_sell, self.gox.quote2float(next_sell), self.ask))
+            self.debug("[s]corrected next sell at %f instead of %f, ask price at %f" % (self.gox.quote2float(next_sell), self.gox.quote2float(bad_next_sell), self.ask))
         elif self.ask == 0:
             status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
 
@@ -194,7 +205,7 @@ class Strategy(strategy.Strategy):
         if self.bid != 0 and self.gox.quote2float(next_buy) > self.bid:
             bad_next_buy = float(next_buy)
             next_buy = mark_own(self.gox.quote2int(self.bid) - (step / 2))
-            self.debug("[s]corrected next buy at %f instead of %f, ask price at %f" % (bad_next_buy, self.gox.quote2float(next_buy), self.bid))
+            self.debug("[s]corrected next buy at %f instead of %f, ask price at %f" % (self.gox.quote2float(next_buy), self.gox.quote2float(bad_next_buy), self.bid))
         elif self.bid == 0:
             status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
 

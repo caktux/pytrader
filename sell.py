@@ -13,11 +13,11 @@ Other keypresses are defined in the 'slot_keypress' function below.
 Activate this strategy's SELL functionality by switching 'simulate' to False
 Test first before enabling the SELL function!
 
-Note: the goxtool.py application swallows most Python exceptions 
+Note: the goxtool.py application swallows most Python exceptions
 and outputs them to the status window and goxtool.log (in app folder).
 This complicates tracing of runtime errors somewhat, but
-to keep an eye on such it is recommended that the developer runs 
-an additional terminal with 'tail -f ./goxtool.log' to see 
+to keep an eye on such it is recommended that the developer runs
+an additional terminal with 'tail -f ./goxtool.log' to see
 continuous logfile output.
 
 coded by tarzan (c) April 2013, modified by caktux
@@ -25,9 +25,19 @@ copying & distribution allowed - attribution appreciated
 """
 
 import goxapi
+import simplejson as json
+
+# Load user.conf
+conf = json.load(open("user.conf"))
+
+# Set defaults
+conf.setdefault('sell_simulate', True)
+conf.setdefault('sell_level', 10000000)
+conf.setdefault('sell_volume', 0.1)
+conf.setdefault('sell_alert', 100000)
 
 # Simulate
-simulate = True
+simulate = conf['sell_simulate']
 
 # Live or simulation notice
 simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
@@ -36,10 +46,10 @@ simulate_or_live = ('SIMULATION - ' if simulate else 'LIVE - ')
 global bidbuf, askbuf # comparators to avoid redundant bid/ask output
 bidbuf = 0
 askbuf = 0
-sell_level = float(10000000) # price at which you want to sell BTC
-threshold = float(100000) # alert price distance from sell_level
+sell_level = float(conf['sell_level']) # price at which you want to sell BTC
+threshold = float(conf['sell_alert']) # alert price distance from sell_level
 sell_alert = float(sell_level - threshold) # alert level for user info
-volume = float(0.1) # user specified BTC volume, set 0 to sell all BTC
+volume = float(conf['sell_volume']) # user specified BTC volume, set 0 to sell all BTC
 
 class Strategy(goxapi.BaseObject):
     # pylint: disable=C0111,W0613,R0201
@@ -144,7 +154,7 @@ class Strategy(goxapi.BaseObject):
         # at once
         self.debug("userorder message received: price %f volume %s typ %s oid %s status %s" % (gox.quote2float(price), str(volume), str(typ), str(oid), str(status)))
         # cancel by oid
-        if status not in ['pending','executing','post-pending','removed'] and oid not in self.existingorders:
+        if status not in ['pending', 'executing', 'post-pending', 'removed'] and oid not in self.existingorders:
             if gox.quote2float(price) == sell_level:
                 self.gox.cancel(oid)
 
