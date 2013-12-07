@@ -118,6 +118,8 @@ class Strategy(strategy.Strategy):
             step_factor = 1 + self.distance / 100.0
             price_sell = self.get_next_sell_price(price_balanced, step_factor)
             price_buy = self.get_next_buy_price(price_balanced, step_factor)
+            sell_amount = -self.get_buy_at_price(price_sell)
+            buy_amount = self.get_buy_at_price(price_buy)
 
             self.debug("[s]BTC difference at current price:",
                 gox.base2float(vol_buy))
@@ -125,7 +127,9 @@ class Strategy(strategy.Strategy):
                 gox.quote2float(price_balanced))
             self.debug("[s]Next two orders would be at:",
                 gox.quote2float(price_sell),
-                gox.quote2float(price_buy))
+                self.gox.base2float(sell_amount),
+                gox.quote2float(price_buy),
+                self.gox.base2float(buy_amount))
 
             vol = gox.base2float(gox.monthly_volume)
             fee = gox.trade_fee
@@ -199,12 +203,17 @@ class Strategy(strategy.Strategy):
         must_buy = diff_btc / 2
 
         # Now compensate the fees: if its a buy then buy a little bit more,
-        # if its a sell (must_buy is negative) then sell a little bit more.
+        # if its a sell (must_buy is negative) then sell a little bit less.
         # We only add half of the fee to distribute it 50/50 to both balances.
         # (for this to work the MtGox fee settings must be at default: take
         # the fee from BTC after buying and take it from USD after selling)
         if int(conf['balancer_compensate_fees']):
-            must_buy *= (1 + self.gox.trade_fee / 200)
+            # Buy a little bit more
+            if must_buy > 0:
+                must_buy *= (1 + self.gox.trade_fee / 200)
+            # Sell a little bit less
+            else:
+                must_buy = must_buy * 2 + (-must_buy * (1 + 0.6 / 200))
 
         # convert into satoshi integer
         must_buy_int = self.gox.base2int(must_buy)
@@ -258,7 +267,7 @@ class Strategy(strategy.Strategy):
             sell_amount = int(0.01 * COIN)
             self.debug("[s]WARNING! minimal sell amount adjusted to 0.01")
 
-        if buy_amount < 0.01 * COIN:
+        if buy_amount < 0.011 * COIN:
             buy_amount = int(0.011 * COIN)
             self.debug("[s]WARNING! minimal buy amount adjusted to 0.011")
 
