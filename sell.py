@@ -125,9 +125,9 @@ class Strategy(goxapi.BaseObject):
                     self.gox.sell(self.bid, sell_amount)
                 self.debug("[s] >>> %sSELL BTC @ %s; bid currently at %s" % (simulate_or_live, str(sell_level), str(self.bid)))
                 seen = 1
-            if seen == 0:
+            # if seen == 0:
                 # no conditions met above, so give the user default info
-                self.debug("Sell level @ %s (alert: %s); bid @ %s" % (str(sell_level), str(sell_alert), str(self.bid)))
+                # self.debug("Sell level @ %s (alert: %s); bid @ %s" % (str(sell_level), str(sell_alert), str(self.bid)))
             # is the updated tick different from previous?
             if bid != bidbuf:
                 bidbuf = bid
