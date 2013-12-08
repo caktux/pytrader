@@ -1003,6 +1003,7 @@ class WinStatus(Win):
         self.addstr(" | Account: ", COLOR_PAIR["status_text"])
         if len(self.sorted_currency_list):
             own_currencies = []
+            total_btc = 0
             for currency in self.sorted_currency_list:
                 if currency in self.gox.wallet:
                     own_currencies.append(currency)
@@ -1010,8 +1011,14 @@ class WinStatus(Win):
                 self.addstr("%s" % own_currency, COLOR_PAIR["status_text"] + curses.A_BOLD)
                 self.addstr(" ", COLOR_PAIR["status_text"])
                 self.addstr("%f" % goxapi.int2float(self.gox.wallet[own_currency], own_currency), COLOR_PAIR["status_text"] + curses.A_BOLD)
+                if own_currency == 'BTC':
+                    total_btc += self.gox.base2float(self.gox.wallet[own_currency])
+                elif own_currency == cquote:
+                    total_btc += self.gox.quote2float(self.gox.wallet[own_currency]) / self.gox.quote2float(self.gox.orderbook.ask)
                 if (c + 1 != len(own_currencies)):
                     self.addstr(" + ", COLOR_PAIR["status_text"])
+            self.addstr(" | %s%s total: " % (cbase, cquote), COLOR_PAIR["status_text"])
+            self.addstr("%f BTC" % total_btc, COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" | Fee: ", COLOR_PAIR["status_text"])
             self.addstr("%s" % self.gox.trade_fee, COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" %", COLOR_PAIR["status_text"])
@@ -1035,8 +1042,9 @@ class WinStatus(Win):
             line2 += "sum_ask: %s %s | " % (str_btc, cbase)
             line2 += "ratio: %s %s/%s | " % (str_ratio, cquote, cbase)
 
-        line2 += "o_lag: %s | " % self.order_lag_txt
-        line2 += "s_lag: %.3f s" % (self.gox.socket_lag / 1e6)
+        line2 += "lag: %s / " % self.order_lag_txt
+        line2 += "%.3f s " % (self.gox.socket_lag / 1e6)
+        line2 += "(order / socket)"
 
         # self.addstr(0, 0, line1, COLOR_PAIR["status_text"])
         self.addstr(1, 0, line2, COLOR_PAIR["status_text"])

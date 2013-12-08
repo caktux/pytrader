@@ -22,6 +22,7 @@ conf.setdefault('balancer_fiat_cold', 0)
 conf.setdefault('balancer_coin_cold', 0)
 conf.setdefault('balancer_marker', 7)
 conf.setdefault('balancer_compensate_fees', False)
+conf.setdefault('balancer_target_margin', 1)
 
 # Simulate
 SIMULATE = int(conf['balancer_simulate'])
@@ -213,7 +214,17 @@ class Strategy(strategy.Strategy):
                 must_buy *= (1 + self.gox.trade_fee / 200)
             # Sell a little bit less
             else:
-                must_buy = must_buy * 2 + (-must_buy * (1 + 0.6 / 200))
+                must_buy = must_buy * 2 + (-must_buy * (1 + self.gox.trade_fee / 200))
+
+        # Apply the same logic for target margin
+        target_margin = float(conf['balancer_target_margin'])
+        if target_margin:
+            # Buy a little bit more for profit
+            if must_buy > 0:
+                must_buy *= (1 + target_margin / 200)
+            # Sell a little bit less for profit
+            else:
+                must_buy = must_buy * 2 + (-must_buy * (1 + target_margin / 200))
 
         # convert into satoshi integer
         must_buy_int = self.gox.base2int(must_buy)
