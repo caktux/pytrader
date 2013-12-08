@@ -103,7 +103,7 @@ Keyboard commands for trading:
 - <kbd>F5</kbd> : New sell order
 - <kbd>F6</kbd> : View orders / cancel order(s)
 
-In the cancel dialog you can move up/down with the arrow keys, use INS to select/unselect orders (you can select multiple orders and cancel them all at once) or if you just quickly want to cancel only one order just highlight to the order and hit F8. It behaves a little bit like deleting files in midnight commander.
+In the cancel dialog you can move up/down with the arrow keys, use INS or = to select/unselect orders (you can select multiple orders and cancel them all at once) or if you just quickly want to cancel only one order just highlight to the order and hit F8. It behaves a little bit like deleting files in midnight commander.
 
 When entering a new order you can move between the fields with up/down keys or move to the next field with tab or enter (but only if you entered a valid number into the previous field, decimal separator is . (not comma, even on European computers), send the order with enter.
 

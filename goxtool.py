@@ -1170,7 +1170,7 @@ class DlgCancelOrders(DlgListItems):
     """modal dialog to cancel orders"""
     def __init__(self, stdscr, gox):
         self.gox = gox
-        hlp = [("INS or =", "select"), ("F8", "cancel selected"), ("F10", "exit")]
+        hlp = [("INS / =", "select"), ("F8", "cancel selected"), ("F10", "exit")]
         keys = [(curses.KEY_F8, self._do_cancel)]
         DlgListItems.__init__(self, stdscr, 45, "Cancel order(s)", hlp, keys)
 
