@@ -1320,7 +1320,6 @@ class PubnubClient(BaseClient):
             res["data"]["sub"],
             None,
             res["data"]["cipher"],
-            True
         )
 
         self.connected = True
@@ -1339,7 +1338,7 @@ class PubnubClient(BaseClient):
         """callback method called by pubnub when a message is received"""
         self.signal_recv(self, msg)
         self._time_last_received = time.time()
-        return True
+        return not self._terminating
 
     def channel_subscribe(self, download_market_data=False):
         # no channels to subscribe, this happened on connect already
