@@ -1710,7 +1710,7 @@ def main():
     argp.add_argument('--strategy', action="store", default="strategy.py",
         help="name of strategy module files, comma separated list, default=strategy.py")
     argp.add_argument('--protocol', action="store", default="",
-        help="force protocol (socketio or websocket), ignore setting in .ini")
+        help="force protocol (socketio, websocket or pubnub), ignore setting in .ini")
     argp.add_argument('--no-fulldepth', action="store_true", default=False,
         help="do not download full depth (useful for debugging)")
     argp.add_argument('--no-depth', action="store_true", default=False,

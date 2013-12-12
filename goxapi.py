@@ -1229,7 +1229,7 @@ class SocketIO(websocket.WebSocket):
 
 
 class PubnubClient(BaseClient):
-    """"this implements the pubnub client.
+    """this implements the pubnub client.
 
     THIS IS ALL INCOMPLETE AND ITS A TOTAL MESS
     BECAUSE I NEEDED TO HACK THIS IN A HURRY
