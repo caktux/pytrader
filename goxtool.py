@@ -1004,6 +1004,7 @@ class WinStatus(Win):
         if len(self.sorted_currency_list):
             own_currencies = []
             total_btc = 0
+            total_fiat = 0
             for currency in self.sorted_currency_list:
                 if currency in self.gox.wallet:
                     own_currencies.append(currency)
@@ -1011,14 +1012,18 @@ class WinStatus(Win):
                 self.addstr("%s" % own_currency, COLOR_PAIR["status_text"] + curses.A_BOLD)
                 self.addstr(" ", COLOR_PAIR["status_text"])
                 self.addstr("%f" % goxapi.int2float(self.gox.wallet[own_currency], own_currency), COLOR_PAIR["status_text"] + curses.A_BOLD)
-                if own_currency == 'BTC':
-                    total_btc += self.gox.base2float(self.gox.wallet[own_currency])
-                elif own_currency == cquote:
-                    total_btc += self.gox.quote2float(self.gox.wallet[own_currency]) / self.gox.quote2float(self.gox.orderbook.ask)
+                if own_currency == 'BTC' and self.gox.wallet and self.gox.orderbook.ask:
+                    total_btc += self.gox.base2float(self.gox.wallet['BTC'])
+                    total_fiat += self.gox.base2float(self.gox.wallet['BTC']) * self.gox.orderbook.ask
+                elif own_currency == cquote and self.gox.wallet and self.gox.orderbook.bid:
+                    total_fiat += float(self.gox.wallet[own_currency])
+                    total_btc += self.gox.quote2float(self.gox.wallet[own_currency]) / self.gox.quote2float(self.gox.orderbook.bid)
                 if (c + 1 != len(own_currencies)):
                     self.addstr(" + ", COLOR_PAIR["status_text"])
             self.addstr(" | %s%s total: " % (cbase, cquote), COLOR_PAIR["status_text"])
             self.addstr("%f BTC" % total_btc, COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr(" / ", COLOR_PAIR["status_text"])
+            self.addstr("%f %s" % (self.gox.quote2float(total_fiat), cquote), COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" | Fee: ", COLOR_PAIR["status_text"])
             self.addstr("%s" % self.gox.trade_fee, COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" %", COLOR_PAIR["status_text"])
