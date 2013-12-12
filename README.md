@@ -42,8 +42,7 @@ Keyboard commands (only the ones useful in view-only mode, without Mt.Gox accoun
 
 (There will be even more commands once you connect it to your Mt.Gox account)
 
-There is also a goxtool.ini file, it will be created on the first start. In the .ini file there are some parameters you can change, for example the currency you want to trade BTC against or some parameters regarding the network protocol. Some of the .ini settings can be overridden by command line options (use the --help option to see a list). The default protocol is websocket, the alternative would be socketio, goxtool implements both protocols, the websocket server is currently more reliable. There is also an option to use the http API for trading commands, the default is to send all commands to the streaming socket, this affects only what happens when you buy/sell/cancel, it does not affect the streaming update of order book and chart.
-socketio or websocket? Which one is worse?
+There is also a goxtool.ini file, it will be created on the first start. In the .ini file there are some parameters you can change, for example the currency you want to trade BTC against or some parameters regarding the network protocol. Some of the .ini settings can be overridden by command line options (use the --help option to see a list). The default protocol is now PubNub, with websocket and socketio as alternatives. Goxtool implements all three protocols with PubNub currently being more reliable. There is also an option to use the http API for trading commands with websocket and socketio, the default is to send all commands to the streaming socket when using websocket, this affects only what happens when you buy/sell/cancel, it does not affect the streaming update of order book and chart.
 
 The two options are socketio or websocket, the .ini setting for this is use_plain_old_websocket. To force it connecting with socketio:
 
@@ -57,9 +56,9 @@ The two options are socketio or websocket, the .ini setting for this is use_plai
 ./goxtool.py --protocol=websocket
 ```
 
-It has turned out that websocket is currently the most reliable protocol. These options on the command line take precedence over what you have configured in the .ini file (but it won't change your .ini), you can make websocket the default (so you don't need this option anymore) by editing the ini file.
+It has turned out that websocket is currently the most reliable protocol after pubnub. These options on the command line take precedence over what you have configured in the .ini file (but it won't change your .ini), you can make websocket the default (so you don't need this option anymore) by editing the ini file.
 
-If you experience a high lag between sending an order and the ack (the op:result) not appearing immediately which is happening during times of really high volume then you should consider also adding --use-http to make it send trading commands via http. Http makes it slightly slower to execute many trades in a row but has been much more reliable when mtgox was under heavy load or ddos or similar. If you don't need to send many orders very fast then this option won't hurt. --use-http can be combined with either socketio or websocket.
+If you experience a high lag between sending an order and the ack (the op:result) not appearing immediately which is happening during times of really high volume then you should consider also adding --use-http to make it send trading commands via http. Http makes it slightly slower to execute many trades in a row but has been much more reliable when mtgox was under heavy load or ddos or similar. If you don't need to send many orders very fast then this option won't hurt. --use-http can be combined with either socketio or websocket and is forced for PubNub.
 
 The following is what I am currently using and I recommend it:
 

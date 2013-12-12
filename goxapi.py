@@ -231,7 +231,7 @@ class GoxConfig(SafeConfigParser):
     _DEFAULTS = [["gox", "base_currency", "BTC"]
                 ,["gox", "quote_currency", "USD"]
                 ,["gox", "use_ssl", "True"]
-                ,["gox", "use_plain_old_websocket", "True"]
+                ,["gox", "use_plain_old_websocket", "False"]
                 ,["gox", "use_http_api", "True"]
                 ,["gox", "use_tonce", "False"]
                 ,["gox", "load_fulldepth", "True"]
@@ -1325,7 +1325,7 @@ class PubnubClient(BaseClient):
         self.debug("### conection lost: %s" % name)
 
     def _pubnub_receive(self, msg):
-        """callback method called by pubnub wen a message is received"""
+        """callback method called by pubnub when a message is received"""
         self.signal_recv(self, msg)
         self._time_last_received = time.time()
         return True
@@ -1496,12 +1496,14 @@ class Gox(BaseObject):
         self.orderbook.signal_debug.connect(self.signal_debug)
 
         use_websocket = self.config.get_bool("gox", "use_plain_old_websocket")
-        use_pubnub = False
+        use_pubnub = True
 
         if "socketio" in FORCE_PROTOCOL:
             use_websocket = False
+            use_pubnub = False
         if "websocket" in FORCE_PROTOCOL:
             use_websocket = True
+            use_pubnub = False
         if "pubnub" in FORCE_PROTOCOL:
             use_websocket = False
             use_pubnub = True
