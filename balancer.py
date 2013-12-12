@@ -55,7 +55,7 @@ def is_own(price):
 
 def write_log(txt):
     """write line to a separate logfile"""
-    with open("_balancer.log", "a") as logfile:
+    with open("balancer.log", "a") as logfile:
         logfile.write(txt + "\n")
 
 
