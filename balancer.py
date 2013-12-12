@@ -203,19 +203,6 @@ class Strategy(strategy.Strategy):
         diff_btc = diff / price_then
         must_buy = diff_btc / 2
 
-        # Now compensate the fees: if its a buy then buy a little bit more,
-        # if its a sell (must_buy is negative) then sell a little bit more.
-        # We only add half of the fee to distribute it 50/50 to both balances.
-        # (for this to work the MtGox fee settings must be at default: take
-        # the fee from BTC after buying and take it from USD after selling)
-        if int(conf['balancer_compensate_fees']):
-            must_buy *= (1 + self.gox.trade_fee / 200)
-
-        # Apply the same logic for target margin
-        target_margin = float(conf['balancer_target_margin'])
-        if target_margin:
-            must_buy *= (1 + target_margin / 200)
-
         # convert into satoshi integer
         must_buy_int = self.gox.base2int(must_buy)
 
@@ -243,11 +230,20 @@ class Strategy(strategy.Strategy):
 
         status_prefix = self.simulate_or_live
 
+        target_margin = float(conf['balancer_target_margin'])
+
         # Protect against selling below current ask price
         if self.ask != 0 and self.gox.quote2float(next_sell) < self.ask:
             bad_next_sell = float(next_sell)
-            step = int(center * self.distance / 100.0)
-            next_sell = mark_own(self.gox.quote2int(self.ask))
+
+            # step = int(center * self.distance / 100.0)
+
+            # Apply target margin to corrected sell price
+            if target_margin:
+                next_sell = mark_own(int(round(self.gox.quote2int(self.ask) * (1 + target_margin / 100))))
+            else:
+                next_sell = mark_own(self.gox.quote2int(self.ask))
+
             self.debug("[s]corrected next sell at %f instead of %f, ask price at %f" % (self.gox.quote2float(next_sell), self.gox.quote2float(bad_next_sell), self.ask))
         elif self.ask == 0:
             status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
@@ -255,8 +251,15 @@ class Strategy(strategy.Strategy):
         # Protect against buying above current bid price
         if self.bid != 0 and self.gox.quote2float(next_buy) > self.bid:
             bad_next_buy = float(next_buy)
-            step = int(center * self.distance / 100.0)
-            next_buy = mark_own(self.gox.quote2int(self.bid))
+
+            # step = int(center * self.distance / 100.0)
+
+            # Apply target margin to corrected buy price
+            if target_margin:
+                next_buy = mark_own(int(round(self.gox.quote2int(self.bid) * 2 - (self.gox.quote2int(self.bid) * (1 + target_margin / 100)))))
+            else:
+                next_buy = mark_own(self.gox.quote2int(self.bid))
+
             self.debug("[s]corrected next buy at %f instead of %f, bid price at %f" % (self.gox.quote2float(next_buy), self.gox.quote2float(bad_next_buy), self.bid))
         elif self.bid == 0:
             status_prefix = 'Waiting for price, skipping ' + self.simulate_or_live
@@ -371,16 +374,26 @@ class Strategy(strategy.Strategy):
         then it will return that, otherwise return center - step"""
         price = self.get_forced_price(center, False)
         if not price:
-            price = mark_own(int(round(center / step_factor)))
-        return price
+            price = int(round(center / step_factor))
+
+            # Compensate the fees on buy price
+            if int(conf['balancer_compensate_fees']):
+                price = int(round(price * 2 - (price * (1 + self.gox.trade_fee / 100))))
+
+        return mark_own(price)
 
     def get_next_sell_price(self, center, step_factor):
         """get the next sell price. If there is a forced price level
         then it will return that, otherwise return center + step"""
         price = self.get_forced_price(center, True)
         if not price:
-            price = mark_own(int(round(center * step_factor)))
-        return price
+            price = int(round(center * step_factor))
+
+            # Compensate the fees on sell price
+            if int(conf['balancer_compensate_fees']):
+                price = int(round(price * (1 + self.gox.trade_fee / 100)))
+
+        return mark_own(price)
 
     def get_forced_price(self, center, need_ask):
         """get externally forced price level for order"""
