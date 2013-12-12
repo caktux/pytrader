@@ -1261,6 +1261,8 @@ class TextBox():
         if char in [10, 13, curses.KEY_ENTER, curses.ascii.BEL]:
             self.result = 10
             return curses.ascii.BEL
+        if char == 127:
+            char = curses.KEY_BACKSPACE
         if char in [27, curses.KEY_F10]:
             self.result = -1
             return curses.ascii.BEL
