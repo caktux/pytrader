@@ -28,7 +28,7 @@ conf.setdefault('balancer_target_margin', 1)
 SIMULATE = int(conf['balancer_simulate'])
 
 # Live or simulation notice
-SIMULATE_OR_LIVE = 'SIMULATION - ' if SIMULATE else ''
+SIMULATE_OR_LIVE = 'SIMULATION - ' if SIMULATE else 'LIVE - '
 
 DISTANCE    = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
 FIAT_COLD   = float(conf['balancer_fiat_cold']) # Amount of Fiat stored at home but included in calculations
@@ -418,7 +418,7 @@ class Strategy(strategy.Strategy):
                 self.debug("[s]Waiting for price...")
             elif int(conf['balancer_compensate_fees']):
                 # Decrease our next buy price by the calculated percentage
-                price = price * 2 - (price * (1 + self.price_factor_with_fees(price) / 100))
+                price = int(round(price * 2 - (price * (1 + self.price_factor_with_fees(price) / 100))))
 
                 self.debug("[s]  adjusted price: %f %s" % (self.gox.quote2float(price), self.gox.curr_quote))
 
@@ -434,7 +434,7 @@ class Strategy(strategy.Strategy):
             # Compensate the fees on sell price
             if int(conf['balancer_compensate_fees']) and center:
                 # Increase our next sell price by the calculated percentage
-                price = price * (1 + self.price_factor_with_fees(price) / 100)
+                price = int(round(price * (1 + self.price_factor_with_fees(price) / 100)))
 
                 self.debug("[s]  adjusted price: %f %s" % (self.gox.quote2float(price), self.gox.curr_quote))
 
