@@ -1,8 +1,22 @@
-"""
-light pubnub API, avoiding unnecessary
-reconnects, only subscribing is implemented.
-(c) 2013 Bernd Kreuss
-"""
+"""pubnub light API (only subscribe, not publish)"""
+
+#  Copyright (c) 2013 Bernd Kreuss <prof7bit@gmail.com>
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+
 import base64
 from Crypto.Cipher import AES
 import hashlib
@@ -15,10 +29,37 @@ class SocketError(Exception):
     """thrown internally when socket read fails"""
     pass
 
+
+class _SSLSocketWrapper():
+    """wrapper aroud socket to enable SSL"""
+    def __init__(self, sock):
+        self.sock = sock
+        self.ssl = socket.ssl(sock)
+
+    def recv(self, bufsize):
+        """recv through ssl"""
+        return self.ssl.read(bufsize)
+
+    def send(self, payload):
+        """send through ssl"""
+        return self.ssl.write(payload)
+
+    def shutdown(self, mode):
+        """shutdown the socket"""
+        self.sock.shutdown(mode)
+
+    def close(self):
+        """close the socket and clean up"""
+        self.sock.close()
+        self.ssl = None
+        self.sock = None
+
+
 class PubNub(): #pylint: disable=R0902
     """implements a simple pubnub client that tries to stay connected
     and is interruptible immediately (using socket instead of urllib2)"""
-    def __init__(self, sub, chan, auth="", cipher=None):
+    #pylint: disable=R0913
+    def __init__(self, sub, chan, auth="", cipher="", ssl=False):
         self.sock = None
         self.uuid = uuid.uuid4()
         self.timestamp = 0
@@ -26,15 +67,18 @@ class PubNub(): #pylint: disable=R0902
         self.chan = chan
         self.auth = auth
         self.cipher = cipher
+        self.ssl = ssl
         self.connected = False
         self.killed = False
 
-    def reinit(self, sub, chan, auth="", cipher=None):
+    #pylint: disable=R0913
+    def reinit(self, sub, chan, auth="", cipher="", ssl=False):
         """set new subscription parameters, and and reset kill flag"""
         self.sub = sub
         self.chan = chan
         self.auth = auth
         self.cipher = cipher
+        self.ssl = ssl
         self.killed = False
 
     def kill(self):
@@ -78,7 +122,11 @@ class PubNub(): #pylint: disable=R0902
     def _connect(self):
         """connect, send request, read header and return Content-Length"""
         self.sock = socket.socket()
-        self.sock.connect(("pubsub.pubnub.com", 80))
+        if self.ssl:
+            self.sock.connect(("pubsub.pubnub.com", 443))
+            self.sock = _SSLSocketWrapper(self.sock)
+        else:
+            self.sock.connect(("pubsub.pubnub.com", 80))
         return self._send_request()
 
     def _read_num_bytes(self, size):
@@ -118,17 +166,18 @@ class PubNub(): #pylint: disable=R0902
             msg = data[0]
             if self.cipher:
                 for i in range(len(msg)):
-                    msg[i] = decrypt(self.cipher, msg[i])
+                    msg[i] = self._decrypt(msg[i])
             return msg
         except SocketError:
             self.connected = False
             raise Exception
 
-
-def decrypt(key, msg):
-    """decrypt a single pubnub message"""
-    secret = hashlib.sha256(key).hexdigest() #pylint: disable=E1101
-    initial16bytes = '0123456789012345'
-    cipher = AES.new(secret[0:32], AES.MODE_CBC, initial16bytes)
-    decrypted = cipher.decrypt(base64.decodestring(msg))
-    return decrypted[0:-ord(decrypted[-1])]
+    def _decrypt(self, msg):
+        """decrypt a single pubnub message"""
+        # they must be real crypto experts at pubnub.com
+        # two lines of code and two capital mistakes :-(
+        # pylint: disable=E1101
+        key = hashlib.sha256(self.cipher).hexdigest()[0:32]
+        aes = AES.new(key, AES.MODE_CBC, "0123456789012345")
+        decrypted = aes.decrypt(base64.decodestring(msg))
+        return decrypted[0:-ord(decrypted[-1])]
