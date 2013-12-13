@@ -67,7 +67,7 @@ class Strategy(goxapi.BaseObject):
         gox.signal_wallet.connect(self.slot_wallet_changed)
         self.gox = gox
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
-        self.debug("[s]%s loaded" % self.name)
+        self.debug("[s]%s%s loaded" % (simulate_or_live, self.name))
         self.debug("[s]Press 's' to see Sell objective")
         #get existing orders for later decision making
         self.existingorders = []
