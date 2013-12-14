@@ -72,13 +72,7 @@ class Strategy(strategy.Strategy):
         self.temp_halt = False
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s%s loaded" % (self.simulate_or_live, self.name))
-        self.debug("[s]Press 'i' for information (how much currently out of balance)")
-        self.debug("[s]Press 'o' to see order book")
-        self.debug("[s]WARNING Rebalancing will buy or sell up to half your fiat or BTC balance")
-        self.debug("[s]Press 'r' to rebalance with market order at current price (recommended before rebalancing)")
-        self.debug("[s]Press 'p' to add initial rebalancing orders and start trading")
-        self.debug("[s]Press 'c' to cancel all rebalancing orders and suspend trading")
-        self.debug("[s]Press 'u' to update account information, order list and wallet")
+        self.help()
 
     def __del__(self):
         try:
@@ -88,6 +82,9 @@ class Strategy(strategy.Strategy):
 
     def slot_keypress(self, gox, (key)):
         """a key has been pressed"""
+
+        if key == ord("h"):
+            self.help()
 
         if key == ord("c"):
             # cancel existing rebalancing orders and suspend trading
@@ -171,6 +168,16 @@ class Strategy(strategy.Strategy):
                         gox.quote2float(price)))
                     if SIMULATE == False:
                         gox.sell(0, -vol_buy)
+
+    def help(self):
+        self.debug("[s]Press 'h' to see this help")
+        self.debug("[s]Press 'i' for information")
+        self.debug("[s]Press 'o' to see order book")
+        self.debug("[s]WARNING Rebalancing will buy or sell up to half your fiat or BTC balance")
+        self.debug("[s]Press 'r' to rebalance with market order at current price (recommended before rebalancing)")
+        self.debug("[s]Press 'p' to add initial rebalancing orders and start trading")
+        self.debug("[s]Press 'c' to cancel all rebalancing orders and suspend trading")
+        self.debug("[s]Press 'u' to update account information, order list and wallet")
 
     def cancel_orders(self):
         """cancel all rebalancing orders, we identify
@@ -388,12 +395,12 @@ class Strategy(strategy.Strategy):
             volume_at_price = -volume_at_price
 
         # Calculate volume with fees
-        volume_with_fees_at_price = float(volume_at_price * (1 + self.gox.trade_fee / 100))
+        volume_with_fees_at_price = volume_at_price * (1 + self.gox.trade_fee / 100)
         fees_at_price = volume_with_fees_at_price - volume_at_price
 
         # Return the price difference in percent
         price = self.gox.quote2float(price)
-        price_factor_with_fees = ((price - (volume_with_fees_at_price * price)) / price)
+        price_factor_with_fees = (price - volume_with_fees_at_price * price) / price
 
         self.debug("[s]next %s: %f %s @ %f %s - fees: %f %s - diff: %f %%" % (
             bid_or_ask,
