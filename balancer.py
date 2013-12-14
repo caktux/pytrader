@@ -454,11 +454,11 @@ class Strategy(strategy.Strategy):
             prices.sort()
             if need_ask:
                 for price in prices:
-                    if price > self.gox.quote2int(center) * self.step_factor:
+                    if price > center * self.step_factor:
                         return mark_own(price)
             else:
                 for price in reversed(prices):
-                    if price < (self.gox.quote2int(center) * 2 - (self.gox.quote2int(center) * self.step_factor)):
+                    if price < center / self.step_factor:
                         return mark_own(price)
 
         return None
