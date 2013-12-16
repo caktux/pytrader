@@ -1829,10 +1829,11 @@ class Gox(BaseObject):
         delay = time.time() * 1e6 - timestamp
         self.socket_lag = (self.socket_lag * 2 + delay) / 3
 
-        self.debug("depth: %s: %s @ %s total vol: %s (age: %0.2f s)" % (
+        self.debug("depth: %s: %s @ %s total: %s vol: %s (age: %0.2f s)" % (
             typ,
             self.base2str(volume),
             self.quote2str(price),
+            self.quote2str(self.quote2int(self.quote2float(price) * self.base2float(volume))),
             self.base2str(total_volume),
             delay / 1e6
         ))
