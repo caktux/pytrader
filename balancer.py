@@ -129,6 +129,7 @@ class Strategy(strategy.Strategy):
                 gox.curr_base,
                 "@",
                 gox.quote2float(price_sell),
+                self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(price_sell) * self.gox.base2float(sell_amount))),
                 gox.curr_quote)
             self.debug(
                 "[s]  bid:",
@@ -136,6 +137,7 @@ class Strategy(strategy.Strategy):
                 gox.curr_base,
                 "@",
                 gox.quote2float(price_buy),
+                self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(price_buy) * self.gox.base2float(buy_amount))),
                 gox.curr_quote)
 
             vol = gox.base2float(gox.monthly_volume)
@@ -145,7 +147,13 @@ class Strategy(strategy.Strategy):
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
             for order in self.gox.orderbook.owns:
-                self.debug("[s]  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), gox.base2str(order.volume), gox.quote2str(order.price), str(order.oid)))
+                self.debug("[s]  %s: %s: %s @ %s %s order id: %s" % (
+                    str(order.status),
+                    str(order.typ),
+                    gox.base2str(order.volume),
+                    gox.quote2str(order.price),
+                    gox.quote2str(gox.quote2int(gox.quote2float(order.price) * gox.base2float(order.volume))),
+                    str(order.oid)))
 
         if key == ord("r"):
             # manually rebalance with market order at current price
@@ -293,18 +301,20 @@ class Strategy(strategy.Strategy):
             buy_amount = int(0.011 * COIN)
             self.debug("[s]WARNING! minimal buy amount adjusted to 0.011")
 
-        self.debug("[s]%snew buy order %f at %f" % (
+        self.debug("[s]%snew buy order %f at %f for %f" % (
             status_prefix,
             self.gox.base2float(buy_amount),
-            self.gox.quote2float(next_buy)
+            self.gox.quote2float(next_buy),
+            self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(next_buy) * self.gox.base2float(buy_amount))),
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.buy(next_buy, buy_amount)
 
-        self.debug("[s]%snew sell order %f at %f" % (
+        self.debug("[s]%snew sell order %f at %f for %f" % (
             status_prefix,
             self.gox.base2float(sell_amount),
-            self.gox.quote2float(next_sell)
+            self.gox.quote2float(next_sell),
+            self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(next_sell) * self.gox.base2float(sell_amount))),
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.sell(next_sell, sell_amount)
@@ -334,11 +344,13 @@ class Strategy(strategy.Strategy):
             return
 
         text = {"bid": "sold", "ask": "bought"}[typ]
+
         self.debug("[s]*** %s %f at %f" % (
             text,
             gox.base2float(volume),
             gox.quote2float(price)
         ))
+
         self.check_trades()
 
     def slot_owns_changed(self, orderbook, _dummy):
