@@ -305,7 +305,7 @@ class Strategy(strategy.Strategy):
             status_prefix,
             self.gox.base2float(buy_amount),
             self.gox.quote2float(next_buy),
-            self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(next_buy) * self.gox.base2float(buy_amount))),
+            self.gox.quote2float(self.gox.quote2int(self.gox.quote2float(next_buy) * self.gox.base2float(buy_amount))),
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.buy(next_buy, buy_amount)
@@ -314,7 +314,7 @@ class Strategy(strategy.Strategy):
             status_prefix,
             self.gox.base2float(sell_amount),
             self.gox.quote2float(next_sell),
-            self.gox.quote2str(self.gox.quote2int(self.gox.quote2float(next_sell) * self.gox.base2float(sell_amount))),
+            self.gox.quote2float(self.gox.quote2int(self.gox.quote2float(next_sell) * self.gox.base2float(sell_amount))),
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.sell(next_sell, sell_amount)
@@ -350,6 +350,13 @@ class Strategy(strategy.Strategy):
             gox.base2float(volume),
             gox.quote2float(price)
         ))
+
+        # Fix MtGox satoshi bug
+        for order in self.gox.orderbook.owns:
+            if gox.base2float(volume) == order.volume:
+                self.cancel_orders()
+                self.place_orders()
+                self.debug("[s]Satoshi!  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), gox.base2str(order.volume), gox.quote2str(order.price), str(order.oid)))
 
         self.check_trades()
 
