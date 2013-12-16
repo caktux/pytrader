@@ -353,7 +353,7 @@ class Strategy(strategy.Strategy):
 
         # Fix MtGox satoshi bug
         for order in self.gox.orderbook.owns:
-            if gox.base2float(volume) == order.volume:
+            if volume == order.volume:
                 self.cancel_orders()
                 self.place_orders()
                 self.debug("[s]Satoshi!  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), gox.base2str(order.volume), gox.quote2str(order.price), str(order.oid)))
