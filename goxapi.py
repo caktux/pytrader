@@ -1109,9 +1109,7 @@ class BaseClient(BaseObject):
 
 
 class WebsocketClient(BaseClient):
-    """this implements a connection to MtGox through the older (but faster)
-    websocket protocol. Unfortuntely its just as unreliable as the socket.io."""
-
+    """this implements a connection to MtGox through the websocket protocol."""
     def __init__(self, curr_base, curr_quote, secret, config):
         BaseClient.__init__(self, curr_base, curr_quote, secret, config)
         self.hostname = WEBSOCKET_HOST
@@ -1398,6 +1396,7 @@ class PubnubStreamSorter(BaseObject):
         self.average_lag = 0
 
     def start(self):
+        """start the extraction thread"""
         start_thread(self._extract_thread_func, "message sorter thread")
         self.debug("### initialized stream sorter with %g s time window"
             % (self.delay))
@@ -1419,7 +1418,7 @@ class PubnubStreamSorter(BaseObject):
 
         # sort it into the existing waiting messages
         self.lock.acquire()
-        bisect.insort(self.queue, (stamp, time.time(), message))
+        bisect.insort(self.queue, (stamp, message))
         self.lock.release()
 
     def stop(self):
@@ -1433,14 +1432,14 @@ class PubnubStreamSorter(BaseObject):
         while not self.terminating:
             self.lock.acquire()
             while self.queue \
-            and time.time() - self.average_lag - self.queue[0][0] > self.delay:
-                (stamp, _inserted, msg) = self.queue.pop(0)
+            and self.queue[0][0] + self.average_lag + self.delay < time.time():
+                (stamp, msg) = self.queue.pop(0)
                 self._update_statistics(stamp, msg)
                 self.signal_pop(self, (msg))
             self.lock.release()
             time.sleep(50E-3)
 
-    def _update_statistics(self, stamp, msg):
+    def _update_statistics(self, stamp, _msg):
         """collect some statistics and print to log occasionally"""
         if stamp < self.stat_last:
             self.stat_bad += 1
@@ -1456,8 +1455,7 @@ class PubnubStreamSorter(BaseObject):
 
 
 class SocketIOClient(BaseClient):
-    """this implements a connection to MtGox using the new socketIO protocol.
-    This should replace the older plain websocket API"""
+    """this implements a connection to MtGox using the socketIO protocol."""
 
     def __init__(self, curr_base, curr_quote, secret, config):
         BaseClient.__init__(self, curr_base, curr_quote, secret, config)
