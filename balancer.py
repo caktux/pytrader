@@ -387,7 +387,7 @@ class Strategy(strategy.Strategy):
         for order in orderbook.owns:
             if order.volume == 0.00000001 * COIN:
                 self.debug("[s]Satoshi!  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), self.gox.base2str(order.volume), self.gox.quote2str(order.price), str(order.oid)))
-                gox.cancel(order.oid)
+                self.gox.cancel(order.oid)
 
         self.check_trades()
 
