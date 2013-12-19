@@ -301,32 +301,25 @@ class Strategy(strategy.Strategy):
             buy_amount = int(0.011 * COIN)
             self.debug("[s]WARNING! minimal buy amount adjusted to 0.011")
 
-        self.debug("[s]%snew buy order %f at %f for %f" % (
+        self.debug("[s]%snew buy order %f at %f for %f %s" % (
             status_prefix,
             self.gox.base2float(buy_amount),
             self.gox.quote2float(next_buy),
             self.gox.quote2float(self.gox.quote2int(self.gox.quote2float(next_buy) * self.gox.base2float(buy_amount))),
+            self.gox.curr_quote
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.buy(next_buy, buy_amount)
 
-        self.debug("[s]%snew sell order %f at %f for %f" % (
+        self.debug("[s]%snew sell order %f at %f for %f %s" % (
             status_prefix,
             self.gox.base2float(sell_amount),
             self.gox.quote2float(next_sell),
             self.gox.quote2float(self.gox.quote2int(self.gox.quote2float(next_sell) * self.gox.base2float(sell_amount))),
+            self.gox.curr_quote
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.sell(next_sell, sell_amount)
-
-        # write some account information to a separate log file
-        datetime = time.strftime("%Y-%m-%d %H:%M", time.localtime())
-        write_log('"%s", %f, %f, %s' % (
-            datetime,
-            self.gox.quote2float(center),
-            self.gox.quote2float(self.gox.wallet[self.gox.curr_quote]) + FIAT_COLD,
-            self.gox.base2float(self.gox.wallet[self.gox.curr_base]) + COIN_COLD
-        ))
 
     def slot_tick(self, gox, (bid, ask)):
         # Set last bid/ask price
@@ -351,17 +344,51 @@ class Strategy(strategy.Strategy):
             gox.quote2float(price)
         ))
 
-        # Fix MtGox satoshi bug
-        for order in self.gox.orderbook.owns:
-            if volume == order.volume:
-                self.cancel_orders()
-                self.place_orders()
-                self.debug("[s]Satoshi!  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), gox.base2str(order.volume), gox.quote2str(order.price), str(order.oid)))
+        # write some account information to a separate log file
+        if len(gox.wallet):
+            total_btc = 0
+            total_fiat = 0
+            for c, own_currency in enumerate(gox.wallet):
+                if own_currency == 'BTC' and gox.orderbook.ask:
+                    total_btc += gox.base2float(gox.wallet['BTC'])
+                    total_fiat += gox.base2float(gox.wallet['BTC']) * gox.orderbook.bid
+                elif own_currency == gox.curr_quote and gox.orderbook.bid:
+                    total_fiat += gox.wallet[own_currency]
+                    total_btc += gox.quote2float(gox.wallet[own_currency]) / gox.quote2float(gox.orderbook.ask)
+
+            total_fiat = gox.quote2float(total_fiat)
+            fiat_ratio = (total_fiat / gox.quote2float(gox.orderbook.bid)) / total_btc
+            btc_ratio = (total_btc / gox.quote2float(gox.orderbook.ask)) * 100
+
+            datetime = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+            write_log('"%s", "%s", %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f' % (
+                datetime,
+                text,
+                gox.base2float(volume),
+                gox.quote2float(price),
+                gox.trade_fee,
+                gox.quote2float(self.get_price_where_it_was_balanced()),
+                gox.quote2float(gox.wallet[gox.curr_quote]),
+                total_fiat,
+                FIAT_COLD,
+                fiat_ratio,
+                gox.base2float(gox.wallet[gox.curr_base]),
+                total_btc,
+                COIN_COLD,
+                btc_ratio
+            ))
 
         self.check_trades()
 
     def slot_owns_changed(self, orderbook, _dummy):
         """status or amount of own open orders has changed"""
+
+        # Fix MtGox satoshi bug
+        for order in orderbook.owns:
+            if order.volume == 0.00000001 * COIN:
+                self.debug("[s]Satoshi!  %s: %s: %s @ %s order id: %s" % (str(order.status), str(order.typ), self.gox.base2str(order.volume), self.gox.quote2str(order.price), str(order.oid)))
+                gox.cancel(order.oid)
+
         self.check_trades()
 
     def check_trades(self):
