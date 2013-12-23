@@ -67,7 +67,6 @@ class Strategy(strategy.Strategy):
         self.ask = 0
         self.simulate_or_live = SIMULATE_OR_LIVE
         self.wallet = False
-        self.simulate = { 'next_sell': False, 'sell_amount': 0, 'next_buy': False, 'buy_amount': 0 }
         self.distance = DISTANCE
         self.step_factor = 1 + self.distance / 100.0
         self.init_distance = float(DISTANCE)
@@ -77,17 +76,18 @@ class Strategy(strategy.Strategy):
         self.help()
 
         # Simulation wallet
-        if SIMULATE and not self.gox.wallet:
+        if (SIMULATE and not self.gox.wallet) or (SIMULATE and self.wallet):
             self.wallet = True
+            self.simulate = { 'next_sell': 0, 'sell_amount': 0, 'next_buy': 0, 'buy_amount': 0 }
             self.gox.wallet = {}
             self.gox.wallet[self.gox.curr_quote] = 1000000000
             self.gox.wallet[self.gox.curr_base] = 10 * COIN
-            # self.gox.trade_fee = 0
-        else:
-            self.wallet = False
+            self.gox.trade_fee = 0.5
 
     def __del__(self):
         try:
+            if SIMULATE and self.wallet:
+                self.gox.wallet = {}
             self.debug("[s]%s unloaded" % self.name)
         except Exception, e:
             self.debug("[s]%s exception: %s" % (self.name, e))
