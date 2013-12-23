@@ -55,7 +55,7 @@ def is_own(price):
 
 def write_log(txt):
     """write line to a separate logfile"""
-    with open("balancer.log", "a") as logfile:
+    with open("balancer.log" if not SIMULATE else "simulation.log", "a") as logfile:
         logfile.write(txt + "\n")
 
 
@@ -66,6 +66,8 @@ class Strategy(strategy.Strategy):
         self.bid = 0
         self.ask = 0
         self.simulate_or_live = SIMULATE_OR_LIVE
+        self.wallet = False
+        self.simulate = { 'next_sell': False, 'sell_amount': 0, 'next_buy': False, 'buy_amount': 0 }
         self.distance = DISTANCE
         self.step_factor = 1 + self.distance / 100.0
         self.init_distance = float(DISTANCE)
@@ -73,6 +75,16 @@ class Strategy(strategy.Strategy):
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s%s loaded" % (self.simulate_or_live, self.name))
         self.help()
+
+        # Simulation wallet
+        if SIMULATE and not self.gox.wallet:
+            self.wallet = True
+            self.gox.wallet = {}
+            self.gox.wallet[self.gox.curr_quote] = 1000000000
+            self.gox.wallet[self.gox.curr_base] = 10 * COIN
+            # self.gox.trade_fee = 0
+        else:
+            self.wallet = False
 
     def __del__(self):
         try:
@@ -146,7 +158,14 @@ class Strategy(strategy.Strategy):
 
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.gox.orderbook.owns))
+            profit_btc = 0
+            profit_fiat = 0
             for order in self.gox.orderbook.owns:
+                btc_diff = gox.base2float(order.volume - order.volume * gox.trade_fee / 100) if str(order.typ) == 'bid' else gox.base2float(order.volume)
+                profit_btc = btc_diff if not profit_btc else profit_btc - btc_diff
+                fiat_diff = gox.quote2float(order.price) * gox.base2float(order.volume)
+                profit_fiat = -fiat_diff if not profit_fiat else profit_fiat + (fiat_diff if str(order.typ) == 'ask' else -fiat_diff)
+
                 self.debug("[s]  %s: %s: %s @ %s %s order id: %s" % (
                     str(order.status),
                     str(order.typ),
@@ -154,6 +173,23 @@ class Strategy(strategy.Strategy):
                     gox.quote2str(order.price),
                     gox.quote2str(gox.quote2int(gox.quote2float(order.price) * gox.base2float(order.volume))),
                     str(order.oid)))
+            self.debug("[s]  Profit would be: %f BTC / %f %s" % (
+                profit_btc,
+                profit_fiat,
+                gox.curr_quote))
+
+            if SIMULATE and self.wallet and self.simulate['next_sell'] and self.simulate['next_buy']:
+                self.debug("[s]SIMULATION orders:")
+                self.debug("[s]  %s: %s @ %s %s" % (
+                    'ask',
+                    gox.base2str(self.simulate['sell_amount']),
+                    gox.quote2str(self.simulate['next_sell']),
+                    gox.quote2str(gox.quote2int(gox.quote2float(self.simulate['next_sell']) * gox.base2float(self.simulate['sell_amount'])))))
+                self.debug("[s]  %s: %s @ %s %s" % (
+                    'bid',
+                    gox.base2str(self.simulate['buy_amount']),
+                    gox.quote2str(self.simulate['next_buy']),
+                    gox.quote2str(gox.quote2int(gox.quote2float(self.simulate['next_buy']) * gox.base2float(self.simulate['buy_amount'])))))
 
         if key == ord("r"):
             # manually rebalance with market order at current price
@@ -310,6 +346,8 @@ class Strategy(strategy.Strategy):
         ))
         if SIMULATE == False and self.ask != 0:
             self.gox.buy(next_buy, buy_amount)
+        elif SIMULATE and self.wallet and self.ask != 0:
+            self.simulate.update({ "next_buy": next_buy, "buy_amount": buy_amount })
 
         self.debug("[s]%snew sell order %f at %f for %f %s" % (
             status_prefix,
@@ -318,13 +356,31 @@ class Strategy(strategy.Strategy):
             self.gox.quote2float(self.gox.quote2int(self.gox.quote2float(next_sell) * self.gox.base2float(sell_amount))),
             self.gox.curr_quote
         ))
-        if SIMULATE == False and self.ask != 0:
+        if SIMULATE == False and self.bid != 0:
             self.gox.sell(next_sell, sell_amount)
+        elif SIMULATE and self.wallet and self.bid != 0:
+            self.simulate.update({ "next_sell": next_sell, "sell_amount": sell_amount })
 
     def slot_tick(self, gox, (bid, ask)):
         # Set last bid/ask price
         self.bid = goxapi.int2float(bid, self.gox.orderbook.gox.currency)
         self.ask = goxapi.int2float(ask, self.gox.orderbook.gox.currency)
+
+        # Simulation wallet
+        if SIMULATE and self.wallet:
+            if ask >= self.simulate['next_sell']:
+                gox.wallet[gox.curr_quote] += gox.base2float(self.simulate['sell_amount']) * self.simulate['next_sell']
+                gox.wallet[gox.curr_base] -= gox.base2float(self.simulate['sell_amount'])
+                # Trigger slot_trade for simulation.log
+                self.slot_trade(gox, (time, self.simulate['next_sell'], self.simulate['sell_amount'], 'bid', True))
+                self.place_orders()
+
+            if bid <= self.simulate['next_buy']:
+                gox.wallet[gox.curr_base] += self.simulate['buy_amount'] - (self.simulate['buy_amount'] * self.gox.trade_fee / 100)
+                gox.wallet[gox.curr_quote] -= gox.base2float(self.simulate['buy_amount'] * self.simulate['next_buy'])
+                # Trigger slot_trade for simulation.log
+                self.slot_trade(gox, (time, self.simulate['next_buy'], self.simulate['buy_amount'], 'ask', True))
+                self.place_orders()
 
     def slot_trade(self, gox, (date, price, volume, typ, own)):
         """a trade message has been receivd"""
@@ -338,7 +394,8 @@ class Strategy(strategy.Strategy):
 
         text = {"bid": "sold", "ask": "bought"}[typ]
 
-        self.debug("[s]*** %s %f at %f" % (
+        self.debug("[s]*** %s%s %f at %f" % (
+            'SIMULATION - ' if SIMULATE else '',
             text,
             gox.base2float(volume),
             gox.quote2float(price)
@@ -360,7 +417,7 @@ class Strategy(strategy.Strategy):
             fiat_ratio = (total_fiat / gox.quote2float(gox.orderbook.bid)) / total_btc
             btc_ratio = (total_btc / gox.quote2float(gox.orderbook.ask)) * 100
 
-            datetime = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+            datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             write_log('"%s", "%s", %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f' % (
                 datetime,
                 text,
