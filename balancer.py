@@ -370,7 +370,7 @@ class Strategy(strategy.Strategy):
         if SIMULATE and self.wallet:
             if ask >= self.simulate['next_sell']:
                 gox.wallet[gox.curr_quote] += gox.base2float(self.simulate['sell_amount']) * self.simulate['next_sell']
-                gox.wallet[gox.curr_base] -= gox.base2float(self.simulate['sell_amount'])
+                gox.wallet[gox.curr_base] -= self.simulate['sell_amount']
                 # Trigger slot_trade for simulation.log
                 self.slot_trade(gox, (time, self.simulate['next_sell'], self.simulate['sell_amount'], 'bid', True))
                 self.place_orders()
