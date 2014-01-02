@@ -90,12 +90,12 @@ class Strategy(goxapi.BaseObject):
         # self.debug("someone pressed the %s key" % chr(key))
         global buy_amount
         if key == ord('b'):
-            self.debug("[s]%sObjective: BUY Bitcoins for %f %s when price reaches %f" % (simulate_or_live, buy_amount, str(self.gox.orderbook.gox.currency), buy_level))
+            self.debug("[s]%sObjective: BUY Bitcoins for %f %s when price reaches %f" % (simulate_or_live, buy_amount, str(self.gox.curr_quote), buy_level))
             # self.debug("[s]Python wallet object: %s" % str(self.gox.wallet))
             # check if the user changed volume
             # also ensure the buy_amount does not exceed wallet balance 
             # if it does, set buy_amount to wallet full fiat balance
-            walletbalance = gox.quote2float(self.gox.wallet[self.gox.orderbook.gox.currency])
+            walletbalance = gox.quote2float(self.gox.wallet[self.gox.curr_quote])
             if volume == 0:
                 buy_amount = walletbalance
             else:
@@ -107,7 +107,7 @@ class Strategy(goxapi.BaseObject):
             #         buy_amount = walletbalance
             # else:
             #     buy_amount = walletbalance
-            self.debug("[s] %sstrategy will spend %f of %f %s on next BUY" % (simulate_or_live, buy_amount, walletbalance, str(self.gox.orderbook.gox.currency)))
+            self.debug("[s] %sstrategy will spend %f of %f %s on next BUY" % (simulate_or_live, buy_amount, walletbalance, str(self.gox.curr_quote)))
 
     def slot_tick(self, gox, (bid, ask)):
         global bidbuf, askbuf, buy_amount
@@ -117,7 +117,7 @@ class Strategy(goxapi.BaseObject):
             self.ask = gox.quote2float(ask)
             if self.ask > buy_level and self.ask < buy_alert:
                 self.debug("[s] !!! buy ALERT @ %s; ask currently at %s" % (str(buy_alert), str(self.ask)))
-                self.debug("[s] !!! BUY for %f %s will trigger @ %f" % (buy_amount, str(self.gox.orderbook.gox.currency), buy_level))
+                self.debug("[s] !!! BUY for %f %s will trigger @ %f" % (buy_amount, str(self.gox.curr_quote), buy_level))
                 seen = 1
             elif self.ask <= buy_level:
                 # this is the condition to action gox.buy()
@@ -172,7 +172,7 @@ class Strategy(goxapi.BaseObject):
             # also ensure the buy_amount does not exceed wallet balance 
             # if it does, set buy_amount to wallet full fiat balance
         global buy_amount
-        walletbalance = gox.quote2float(self.gox.wallet[self.gox.orderbook.gox.currency])
+        walletbalance = gox.quote2float(self.gox.wallet[self.gox.curr_quote])
         if volume != 0 and volume <= walletbalance:
             buy_amount = volume
         else:
