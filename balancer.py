@@ -489,33 +489,35 @@ class Strategy(strategy.Strategy):
             self.cancel_orders()
             self.place_orders()
 
-    def price_factor_with_fees(self, price):
+    def price_with_fees(self, price):
         # Get our volume at price
-        bid_or_ask = 'bid'
         volume_at_price = self.gox.base2float(self.get_buy_at_price(price))
-        if volume_at_price < 0:
+
+        if volume_at_price > 0:
+            bid_or_ask = 'bid'
+            price_with_fees = price / ((1 - self.gox.trade_fee / 100) * (1 - self.gox.trade_fee / 100))
+            price_with_fees = price - (price_with_fees - price)
+        else:
             bid_or_ask = 'ask'
             volume_at_price = -volume_at_price
+            price_with_fees = price / ((1 - self.gox.trade_fee / 100) * (1 - self.gox.trade_fee / 100))
 
-        # Calculate volume with fees
-        volume_with_fees_at_price = volume_at_price * (1 + self.gox.trade_fee / 100)
-        fees_at_price = volume_with_fees_at_price - volume_at_price
+        # Calculate fees
+        fees_at_price = volume_at_price * self.gox.trade_fee / 100
 
-        # Return the price difference in percent
-        price = self.gox.quote2float(price)
-        price_factor_with_fees = (price - volume_with_fees_at_price * price) / price
-
-        self.debug("[s]next %s: %f %s @ %f %s - fees: %f %s - diff: %f %%" % (
+        self.debug("[s]next %s: %f %s @ %f %s - fees: %f %s - new: %f %s" % (
             bid_or_ask,
             volume_at_price,
             self.gox.curr_base,
-            price,
+            self.gox.quote2float(price),
             self.gox.curr_quote,
             fees_at_price,
             self.gox.curr_base,
-            price_factor_with_fees))
+            self.gox.quote2float(price_with_fees),
+            self.gox.curr_quote))
 
-        return price_factor_with_fees
+        # Return the price with fees
+        return price_with_fees
 
     def get_next_buy_price(self, center, step_factor):
         """get the next buy price. If there is a forced price level
@@ -527,10 +529,8 @@ class Strategy(strategy.Strategy):
             if not center:
                 self.debug("[s]Waiting for price...")
             elif int(conf['balancer_compensate_fees']):
-                # Decrease our next buy price by the calculated percentage
-                price = int(round(price * 2 - (price * (1 + self.price_factor_with_fees(price) / 100))))
-
-                self.debug("[s]  adjusted price: %f %s" % (self.gox.quote2float(price), self.gox.curr_quote))
+                # Decrease our next buy price
+                price = int(round(self.price_with_fees(price)))
 
         return mark_own(price)
 
@@ -543,10 +543,8 @@ class Strategy(strategy.Strategy):
 
             # Compensate the fees on sell price
             if int(conf['balancer_compensate_fees']) and center:
-                # Increase our next sell price by the calculated percentage
-                price = int(round(price * (1 + self.price_factor_with_fees(price) / 100)))
-
-                self.debug("[s]  adjusted price: %f %s" % (self.gox.quote2float(price), self.gox.curr_quote))
+                # Increase our next sell price
+                price = int(round(self.price_with_fees(price)))
 
         return mark_own(price)
 
