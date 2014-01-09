@@ -17,11 +17,12 @@ conf = json.load(open("user.conf"))
 
 # Set defaults
 conf.setdefault('balancer_simulate', True)
-conf.setdefault('balancer_distance', 7)
+conf.setdefault('balancer_distance', 5)
+conf.setdefault('balancer_distance_sell', 5)
 conf.setdefault('balancer_fiat_cold', 0)
 conf.setdefault('balancer_coin_cold', 0)
 conf.setdefault('balancer_marker', 7)
-conf.setdefault('balancer_compensate_fees', False)
+conf.setdefault('balancer_compensate_fees', True)
 conf.setdefault('balancer_target_margin', 1)
 
 # Simulate
@@ -30,12 +31,13 @@ SIMULATE = int(conf['balancer_simulate'])
 # Live or simulation notice
 SIMULATE_OR_LIVE = 'SIMULATION - ' if SIMULATE else 'LIVE - '
 
-DISTANCE    = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
-FIAT_COLD   = float(conf['balancer_fiat_cold']) # Amount of Fiat stored at home but included in calculations
-COIN_COLD   = float(conf['balancer_coin_cold']) # Amount of Coin stored at home but included in calculations
+DISTANCE = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
+DISTANCE_SELL = float(conf['balancer_distance_sell'])  # percent price distance of next rebalancing orders
+FIAT_COLD = float(conf['balancer_fiat_cold']) # Amount of Fiat stored at home but included in calculations
+COIN_COLD = float(conf['balancer_coin_cold']) # Amount of Coin stored at home but included in calculations
 
-MARKER      = int(conf['balancer_marker'])    # lowest digit of price to identify bot's own orders
-COIN        = 1E8   # number of satoshi per coin, this is a constant.
+MARKER = int(conf['balancer_marker'])    # lowest digit of price to identify bot's own orders
+COIN = 1E8   # number of satoshi per coin, this is a constant.
 
 def add_marker(price, marker):
     """encode a marker in the price value to find bot's own orders"""
@@ -67,9 +69,8 @@ class Strategy(strategy.Strategy):
         self.ask = 0
         self.simulate_or_live = SIMULATE_OR_LIVE
         self.wallet = False
-        self.distance = DISTANCE
-        self.step_factor = 1 + self.distance / 100.0
-        self.init_distance = float(DISTANCE)
+        self.step_factor = 1 + DISTANCE / 100.0
+        self.step_factor_sell = 1 + DISTANCE_SELL / 100.0
         self.temp_halt = False
         self.name = "%s.%s" % (__name__, self.__class__.__name__)
         self.debug("[s]%s%s loaded" % (self.simulate_or_live, self.name))
@@ -127,7 +128,7 @@ class Strategy(strategy.Strategy):
 
             price_balanced = self.get_price_where_it_was_balanced()
             self.debug("[s]center is %f" % self.gox.quote2float(price_balanced))
-            price_sell = self.get_next_sell_price(price_balanced, self.step_factor)
+            price_sell = self.get_next_sell_price(price_balanced, self.step_factor_sell)
             price_buy = self.get_next_buy_price(price_balanced, self.step_factor)
             sell_amount = -self.get_buy_at_price(price_sell)
             buy_amount = self.get_buy_at_price(price_buy)
@@ -287,7 +288,7 @@ class Strategy(strategy.Strategy):
         else:
             return
 
-        next_sell = self.get_next_sell_price(center, self.step_factor)
+        next_sell = self.get_next_sell_price(center, self.step_factor_sell)
         next_buy = self.get_next_buy_price(center, self.step_factor)
 
         status_prefix = self.simulate_or_live
@@ -562,7 +563,7 @@ class Strategy(strategy.Strategy):
             prices.sort()
             if need_ask:
                 for price in prices:
-                    if price > center * self.step_factor:
+                    if price > center * self.step_factor_sell:
                         return mark_own(price)
             else:
                 for price in reversed(prices):
