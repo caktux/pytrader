@@ -949,17 +949,23 @@ class BaseClient(BaseObject):
                     }
                 else:
                     if "error" in answer:
-                        # these are errors like "Order amount is too low"
-                        # or "Order not found" and the like, we send them
-                        # to signal_recv() as if they had come from the
-                        # streaming API beause Gox() can handle these errors.
-                        translated = {
-                            "op": "remark",
-                            "success": False,
-                            "message": answer["error"],
-                            "token": answer["token"],
-                            "id": reqid
-                        }
+                        if answer["token"] == "unknown_error":
+                            # enqueue it again, it will eventually succeed.
+                            self.enqueue_http_request(api_endpoint, params, reqid)
+                        else:
+
+                            # these are errors like "Order amount is too low"
+                            # or "Order not found" and the like, we send them
+                            # to signal_recv() as if they had come from the
+                            # streaming API beause Gox() can handle these errors.
+                            translated = {
+                                "op": "remark",
+                                "success": False,
+                                "message": answer["error"],
+                                "token": answer["token"],
+                                "id": reqid
+                            }
+
                     else:
                         self.debug("### unexpected http result:", answer, reqid)
 
@@ -2343,9 +2349,6 @@ class OrderBook(BaseObject):
             for order in self.owns:
                 if order.oid == oid:
                     found = True
-                    if order.status == "open" and status == "open":
-                        # ignore duplicated open message
-                        return
                     self.debug(
                         "### updating order %s " % oid,
                         "volume:", self.gox.base2str(volume),
