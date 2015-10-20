@@ -1,0 +1,405 @@
+
+import json
+import time
+import hmac
+import Queue
+import base64
+import hashlib
+import threading
+import traceback
+from api import BaseObject, Signal, Timer, start_thread, http_request
+from api import FORCE_NO_FULLDEPTH, FORCE_NO_HISTORY
+from urllib import urlencode
+
+HTTP_HOST = "api.kraken.com"
+
+class PollClient(BaseObject):
+    """Polling client class"""
+
+    _last_unique_microtime = 0
+    _nonce_lock = threading.Lock()
+
+    def __init__(self, curr_base, curr_quote, secret, config):
+        BaseObject.__init__(self)
+
+        self.signal_recv = Signal()
+        self.signal_fulldepth = Signal()
+        self.signal_fullhistory = Signal()
+        self.signal_ticker = Signal()
+        self.signal_connected = Signal()
+        self.signal_disconnected = Signal()
+
+        self._timer_lag = Timer(12)
+        self._timer_info = Timer(5)
+        self._timer_ticker = Timer(3)
+        self._timer_orders = Timer(5)
+        self._timer_volume = Timer(30)
+        self._timer_depth = Timer(10)
+        self._timer_history = Timer(15)
+
+        self._timer_lag.connect(self.slot_timer_lag)
+        self._timer_info.connect(self.slot_timer_info)
+        self._timer_ticker.connect(self.slot_timer_ticker)
+        self._timer_orders.connect(self.slot_timer_orders)
+        self._timer_volume.connect(self.slot_timer_volume)
+        self._timer_depth.connect(self.slot_timer_depth)
+        self._timer_history.connect(self.slot_timer_history)
+
+        self._info_timer = None  # used when delayed requesting private/info
+
+        self.curr_base = curr_base
+        self.curr_quote = curr_quote
+        self.pair = "%s%s" % (curr_base, curr_quote)
+
+        self.secret = secret
+        self.config = config
+        self.socket = None
+        self.http_requests = Queue.Queue()
+
+        self._http_thread = None
+        self._terminating = False
+        self.history_last_candle = None
+
+    def start(self):
+        """start the client"""
+        self._http_thread = start_thread(self._http_thread_func, "http thread")
+
+    def stop(self):
+        """stop the client"""
+        self._terminating = True
+        self._timer_lag.cancel()
+        self._timer_info.cancel()
+        self._timer_ticker.cancel()
+        self._timer_orders.cancel()
+        self._timer_volume.cancel()
+        self._timer_depth.cancel()
+        self._timer_history.cancel()
+        self.debug("### stopping client")
+
+    def get_unique_microtime(self):
+        """produce a unique nonce that is guaranteed to be ever increasing"""
+        with self._nonce_lock:
+            microtime = int(time.time() * 1E6)
+            if microtime <= self._last_unique_microtime:
+                microtime = self._last_unique_microtime + 1
+            self._last_unique_microtime = microtime
+            return microtime
+
+    def request_fulldepth(self):
+        """start the fulldepth thread"""
+
+        def fulldepth_thread():
+            """request the full market depth, initialize the order book
+            and then terminate. This is called in a separate thread after
+            the streaming API has been connected."""
+            querystring = "?pair=%s" % self.pair
+            # self.debug("### requesting initial full depth")
+            use_ssl = self.config.get_bool("api", "use_ssl")
+            proto = {True: "https", False: "http"}[use_ssl]
+            fulldepth = json.loads(http_request("%s://%s/0/public/Depth%s" % (
+                proto,
+                HTTP_HOST,
+                querystring
+            )))
+            depth = {}
+            depth['error'] = fulldepth['error']
+            # depth['data'] = fulldepth['result']
+            depth['data'] = {'asks': [], 'bids': []}
+            for ask in fulldepth['result'][self.pair]['asks']:
+                depth['data']['asks'].append({
+                    'price': float(ask[0]),
+                    'amount': float(ask[1])
+                })
+            for bid in reversed(fulldepth['result'][self.pair]['bids']):
+                depth['data']['bids'].append({
+                    'price': float(bid[0]),
+                    'amount': float(bid[1])
+                })
+            self.signal_fulldepth(self, (depth))
+
+        start_thread(fulldepth_thread, "http request full depth")
+
+    def request_history(self):
+        """request trading history"""
+
+        # Api() will have set this field to the timestamp of the last
+        # known candle, so we only request data since this time
+        since = self.history_last_candle
+
+        def history_thread():
+            """request trading history"""
+
+            # 1308503626, 218868 <-- last small transacion ID
+            # 1309108565, 1309108565842636 <-- first big transaction ID
+
+            querystring = "?pair=%s" % self.pair
+            if since:
+                querystring += "&since=%i" % (since * 1000000)
+
+            # self.debug("### requesting history")
+            use_ssl = self.config.get_bool("api", "use_ssl")
+            proto = {True: "https", False: "http"}[use_ssl]
+            json_hist = http_request("%s://%s/0/public/Trades%s" % (
+                proto,
+                HTTP_HOST,
+                querystring
+            ))
+            raw_history = json.loads(json_hist)
+            # self.debug("History: %s" % raw_history)
+            history = []
+            for h in raw_history["result"][self.pair]:
+                history.append({
+                    'price': float(h[0]),
+                    'amount': float(h[1]),
+                    'date': h[2]
+                })
+            if history and not raw_history["error"]:
+                self.signal_fullhistory(self, history)
+
+        start_thread(history_thread, "http request trade history")
+
+    def request_ticker(self):
+        """ticker"""
+        def ticker_thread():
+            querystring = "?pair=%s" % self.pair
+            use_ssl = self.config.get_bool("api", "use_ssl")
+            proto = {True: "https", False: "http"}[use_ssl]
+            json_ticker = http_request("%s://%s/0/public/Ticker%s" % (
+                proto,
+                HTTP_HOST,
+                querystring
+            ))
+            answer = json.loads(json_ticker)
+            # self.debug("TICK %s" % answer)
+            if not answer["error"]:
+                bid = float(answer['result'][self.pair]['b'][0])
+                ask = float(answer['result'][self.pair]['a'][0])
+                self.signal_ticker(self, (bid, ask))
+
+        start_thread(ticker_thread, "http request ticker")
+
+    def _slot_timer_info_later(self, _sender, _data):
+        """the slot for the request_info_later() timer signal"""
+        self.request_info()
+        self._info_timer = None
+
+    def request_info_later(self, delay):
+        """request the private/info in delay seconds from now"""
+        if self._info_timer:
+            self._info_timer.cancel()
+        self._info_timer = Timer(delay, True)
+        self._info_timer.connect(self._slot_timer_info_later)
+
+    def request_info(self):
+        """request the private/Balance object"""
+        self.enqueue_http_request("private/Balance", {}, "info")
+
+    def request_volume(self):
+        """request trade volume and fee"""
+        self.enqueue_http_request("private/TradeVolume", {'pair': self.pair, 'fee-info': True}, "volume")
+
+    def request_orders(self):
+        """request the private/OpenOrders object"""
+        self.enqueue_http_request("private/OpenOrders", {}, "orders")
+
+    def _http_thread_func(self):
+        """send queued http requests to the http API"""
+        while not self._terminating:
+            # pop queued request from the queue and process it
+            (api_endpoint, params, reqid) = self.http_requests.get(True)
+            translated = None
+            try:
+                answer = self.http_signed_call(api_endpoint, params)
+                self.debug("Result: %s" % answer)
+                if "result" in answer:
+                    # the following will reformat the answer in such a way
+                    # that we can pass it directly to signal_recv()
+                    # as if it had come directly from the websocket
+                    # if api_endpoint == 'public/Ticker':
+                    #     result = {
+                    #         'bid': answer['result'][self.pair]['b'][0],
+                    #         'ask': answer['result'][self.pair]['a'][0]
+                    #     }
+                    if api_endpoint == 'public/Time':
+                        lag = time.time() - answer['result']['unixtime']
+                        result = {
+                            'lag': lag * 1000,
+                            'lag_text': "%0.3f s" % lag
+                        }
+                    elif api_endpoint == 'private/OpenOrders':
+                        result = []
+                        orders = answer["result"]["open"]
+                        for txid in orders:
+                            tx = orders[txid]
+                            result.append({
+                                'oid': txid,
+                                'base': "X" + tx['descr']['pair'][0:3],
+                                'currency': "X" + tx['descr']['pair'][3:],
+                                'status': tx['status'],
+                                'type': 'bid' if tx['descr']['type'] == 'buy' else 'ask',
+                                'price': float(tx['descr']['price']),
+                                'amount': float(tx['vol'])
+                            })
+                            # self.debug("TX: %s" % result)
+                    elif api_endpoint == 'private/TradeVolume':
+                        result = {
+                            'volume': float(answer['result']['volume']),
+                            'currency': answer['result']['currency'],
+                            'fee': float(answer['result']['fees'][self.pair]['fee'])
+                        }
+                    else:
+                        result = answer["result"]
+
+                    translated = {
+                        "op": "result",
+                        "result": result,
+                        "id": reqid
+                    }
+                else:
+                    if "error" in answer:
+                        if "token" not in answer:
+                            answer["token"] = "-"
+                        # if answer["token"] == "unknown_error":
+                            # enqueue it again, it will eventually succeed.
+                            # self.enqueue_http_request(api_endpoint, params, reqid)
+                        # else:
+                            # these are errors like "Order amount is too low"
+                            # or "Order not found" and the like, we send them
+                            # to signal_recv() as if they had come from the
+                            # streaming API beause Api() can handle these errors.
+                        translated = {
+                            "op": "remark",
+                            "success": False,
+                            "message": answer["error"],
+                            "token": answer["token"],
+                            "id": reqid
+                        }
+
+                    else:
+                        self.debug("### unexpected http result:", answer, reqid)
+
+            except Exception as exc:
+                # should this ever happen? HTTP 5xx wont trigger this,
+                # something else must have gone wrong, a totally malformed
+                # reply or something else.
+                #
+                # After some time of testing during times of heavy
+                # volatility it appears that this happens mostly when
+                # there is heavy load on their servers. Resubmitting
+                # the API call will then eventally succeed.
+                self.debug("### exception in _http_thread_func:",
+                           exc, api_endpoint, params, reqid)
+                self.debug(traceback.format_exc())
+
+                # enqueue it again, it will eventually succeed.
+                # self.enqueue_http_request(api_endpoint, params, reqid)
+
+            if translated:
+                self.signal_recv(self, (json.dumps(translated)))
+
+            self.http_requests.task_done()
+
+    def enqueue_http_request(self, api_endpoint, params, reqid):
+        """enqueue a request for sending to the HTTP API, returns
+        immediately, behaves exactly like sending it over the websocket."""
+        if self.secret and self.secret.know_secret():
+            self.http_requests.put((api_endpoint, params, reqid))
+
+    def http_signed_call(self, api_endpoint, params):
+        """send a signed request to the HTTP API V2"""
+        if (not self.secret) or (not self.secret.know_secret()):
+            self.debug("### don't know secret, cannot call %s" % api_endpoint)
+            return
+
+        key = self.secret.key
+        sec = self.secret.secret
+
+        params["nonce"] = self.get_unique_microtime()
+
+        urlpath = "/0/" + api_endpoint
+        post = urlencode(params)
+        message = urlpath + hashlib.sha256(str(params["nonce"]) + post).digest()
+        sign = hmac.new(base64.b64decode(sec), message, hashlib.sha512).digest()
+
+        headers = {
+            'API-Key': key,
+            'API-Sign': base64.b64encode(sign)
+        }
+
+        use_ssl = self.config.get_bool("api", "use_ssl")
+        proto = {True: "https", False: "http"}[use_ssl]
+        url = "%s://%s/0/%s" % (
+            proto,
+            HTTP_HOST,
+            api_endpoint
+        )
+
+        # self.debug("### (%s) calling %s" % (proto, url))
+        return json.loads(http_request(url, post, headers))
+
+    def send_order_add(self, typ, price, volume):
+        """send an order"""
+        reqid = "order_add:%s:%f:%f" % (typ, price, volume)
+        typ = "sell" if typ == "ask" else "buy"
+        if price > 0:
+            params = {
+                "pair": self.pair,
+                "type": typ,
+                "ordertype": "limit",
+                "price": str(price),
+                "volume": str(volume)
+            }
+        else:
+            params = {
+                "pair": self.pair,
+                "type": typ,
+                "ordertype": "market",
+                "volume": str(volume)
+            }
+
+        api = "private/AddOrder"
+        self.enqueue_http_request(api, params, reqid)
+
+    def send_order_cancel(self, txid):
+        """cancel an order"""
+        params = {"txid": txid}
+        reqid = "order_cancel:%s" % txid
+        api = "private/CancelOrder"
+        self.enqueue_http_request(api, params, reqid)
+
+    def slot_timer_lag(self, _sender, _data):
+        """get server time and calculate lag"""
+        reqid = "order_lag"
+        api = "public/Time"
+        self.enqueue_http_request(api, {}, reqid)
+
+    def slot_timer_info(self, _sender, _data):
+        """download info data"""
+        self.request_info()
+
+    def slot_timer_ticker(self, _sender, _data):
+        """get server time and calculate lag"""
+        self.request_ticker()
+        # reqid = "ticker"
+        # api = "public/Ticker"
+        # self.enqueue_http_request(api, {}, reqid)
+
+    def slot_timer_volume(self, _sender, _data):
+        """download volume and fee data"""
+        self.request_volume()
+
+    def slot_timer_orders(self, _sender, _data):
+        """download orders data"""
+        self.request_orders()
+
+    def slot_timer_depth(self, _sender, _data):
+        """download depth data"""
+        if self.config.get_bool("api", "load_fulldepth"):
+            if not FORCE_NO_FULLDEPTH:
+                self.request_fulldepth()
+
+    def slot_timer_history(self, _sender, _data):
+        """download history data"""
+        if self.config.get_bool("api", "load_history"):
+            if not FORCE_NO_HISTORY:
+                self.request_history()

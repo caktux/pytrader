@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 """
-Tool to display live MtGox market info and
+Tool to display live market info and
 framework for experimenting with trading bots
 """
 #  Copyright (c) 2013 Bernd Kreuss <prof7bit@gmail.com>
@@ -27,7 +27,7 @@ import argparse
 import curses
 import curses.panel
 import curses.textpad
-import goxapi
+import api
 import logging
 import locale
 import math
@@ -37,56 +37,53 @@ import time
 import traceback
 import threading
 
-sys_out = sys.stdout #pylint: disable=C0103
+sys_out = sys.stdout
 
-#
 #
 # curses user interface
 #
 
-HEIGHT_STATUS   = 2
-HEIGHT_CON      = 20
-WIDTH_ORDERBOOK = 45
+HEIGHT_STATUS = 2
+HEIGHT_CON = 20
+WIDTH_ORDERBOOK = 40
 
-COLORS =    [["con_text",       curses.COLOR_BLACK,    curses.COLOR_WHITE]
-            ,["con_text_buy",   curses.COLOR_BLACK,    curses.COLOR_GREEN]
-            ,["con_text_sell",  curses.COLOR_BLACK,    curses.COLOR_RED]
-            ,["con_separator",  curses.COLOR_BLUE,     curses.COLOR_WHITE]
-            ,["status_text",    curses.COLOR_BLACK,    curses.COLOR_WHITE]
+COLORS = [["con_text", curses.COLOR_BLACK, curses.COLOR_WHITE],
+          ["con_text_buy", curses.COLOR_BLACK, curses.COLOR_GREEN],
+          ["con_text_sell", curses.COLOR_BLACK, curses.COLOR_RED],
+          ["con_separator", curses.COLOR_BLUE, curses.COLOR_WHITE],
+          ["status_text", curses.COLOR_BLACK, curses.COLOR_WHITE],
 
-            ,["book_text",      curses.COLOR_BLACK,   curses.COLOR_CYAN]
-            ,["book_bid",       curses.COLOR_BLACK,   curses.COLOR_GREEN]
-            ,["book_ask",       curses.COLOR_BLACK,   curses.COLOR_RED]
-            ,["book_own",       curses.COLOR_BLACK,   curses.COLOR_YELLOW]
-            ,["book_vol",       curses.COLOR_BLACK,   curses.COLOR_CYAN]
+          ["book_text", curses.COLOR_BLACK, curses.COLOR_CYAN],
+          ["book_bid", curses.COLOR_BLACK, curses.COLOR_GREEN],
+          ["book_ask", curses.COLOR_BLACK, curses.COLOR_RED],
+          ["book_own", curses.COLOR_BLACK, curses.COLOR_YELLOW],
+          ["book_vol", curses.COLOR_BLACK, curses.COLOR_CYAN],
 
-            ,["chart_text",     curses.COLOR_BLACK,   curses.COLOR_WHITE]
-            ,["chart_up",       curses.COLOR_BLACK,   curses.COLOR_GREEN]
-            ,["chart_down",     curses.COLOR_BLACK,   curses.COLOR_RED]
-            ,["order_pending",  curses.COLOR_BLACK,   curses.COLOR_RED]
+          ["chart_text", curses.COLOR_BLACK, curses.COLOR_WHITE],
+          ["chart_up", curses.COLOR_BLACK, curses.COLOR_GREEN],
+          ["chart_down", curses.COLOR_BLACK, curses.COLOR_RED],
+          ["order_pending", curses.COLOR_BLACK, curses.COLOR_RED],
 
-            ,["dialog_text",     curses.COLOR_BLUE,   curses.COLOR_CYAN]
-            ,["dialog_sel",      curses.COLOR_CYAN,   curses.COLOR_BLUE]
-            ,["dialog_sel_text", curses.COLOR_BLUE,   curses.COLOR_YELLOW]
-            ,["dialog_sel_sel",  curses.COLOR_YELLOW, curses.COLOR_BLUE]
-            ,["dialog_bid_text", curses.COLOR_GREEN,  curses.COLOR_BLACK]
-            ,["dialog_ask_text", curses.COLOR_RED,    curses.COLOR_WHITE]
-            ]
+          ["dialog_text", curses.COLOR_BLUE, curses.COLOR_CYAN],
+          ["dialog_sel", curses.COLOR_CYAN, curses.COLOR_BLUE],
+          ["dialog_sel_text", curses.COLOR_BLUE, curses.COLOR_YELLOW],
+          ["dialog_sel_sel", curses.COLOR_YELLOW, curses.COLOR_BLUE],
+          ["dialog_bid_text", curses.COLOR_GREEN, curses.COLOR_BLACK],
+          ["dialog_ask_text", curses.COLOR_RED, curses.COLOR_WHITE]]
 
-INI_DEFAULTS =  [["goxtool", "set_xterm_title", "True"]
-                ,["goxtool", "dont_truncate_logfile", "False"]
-                ,["goxtool", "show_orderbook_stats", "True"]
-                ,["goxtool", "highlight_changes", "True"]
-                ,["goxtool", "orderbook_group", "0"]
-                ,["goxtool", "orderbook_sum_total", "False"]
-                ,["goxtool", "display_right", "history_chart"]
-                ,["goxtool", "depth_chart_group", "1"]
-                ,["goxtool", "depth_chart_sum_total", "True"]
-                ,["goxtool", "show_ticker", "True"]
-                ,["goxtool", "show_depth", "True"]
-                ,["goxtool", "show_trade", "True"]
-                ,["goxtool", "show_trade_own", "True"]
-                ]
+INI_DEFAULTS = [["pytrader", "set_xterm_title", "True"],
+                ["pytrader", "dont_truncate_logfile", "False"],
+                ["pytrader", "show_orderbook_stats", "True"],
+                ["pytrader", "highlight_changes", "True"],
+                ["pytrader", "orderbook_group", "0"],
+                ["pytrader", "orderbook_sum_total", "False"],
+                ["pytrader", "display_right", "history_chart"],
+                ["pytrader", "depth_chart_group", "1"],
+                ["pytrader", "depth_chart_sum_total", "True"],
+                ["pytrader", "show_ticker", "True"],
+                ["pytrader", "show_depth", "True"],
+                ["pytrader", "show_trade", "True"],
+                ["pytrader", "show_trade_own", "True"]]
 
 COLOR_PAIR = {}
 
@@ -112,7 +109,6 @@ def dump_all_stacks():
                 return thread.name
 
     ret = "\n# Full stack trace of all running threads:\n"
-    #pylint: disable=W0212
     for thread_id, stack in sys._current_frames().items():
         ret += "\n# %s (%s)\n" % (get_name(thread_id), thread_id)
         for filename, lineno, name, line in traceback.extract_stack(stack):
@@ -126,10 +122,9 @@ def try_get_lock_or_break_open():
     It is used during shutdown to make sure we can properly exit even when
     some slot is stuck (due to a programming error) and won't release the lock.
     If we can't acquire it within 2 seconds we just break it open forcefully."""
-    #pylint: disable=W0212
     time_end = time.time() + 2
     while time.time() < time_end:
-        if goxapi.Signal._lock.acquire(False):
+        if api.Signal._lock.acquire(False):
             return
         time.sleep(0.001)
 
@@ -138,13 +133,12 @@ def try_get_lock_or_break_open():
     # we just throw away that lock and replace it with a new one
     lock = threading.RLock()
     lock.acquire()
-    goxapi.Signal._lock = lock
+    api.Signal._lock = lock
     print "### could not acquire signal lock, frozen slot somewhere?"
     print "### please see the stacktrace log to determine the cause."
 
 class Win:
     """represents a curses window"""
-    # pylint: disable=R0902
 
     def __init__(self, stdscr):
         """create and initialize the window. This will also subsequently
@@ -217,7 +211,7 @@ class Win:
             attr = args[3]
         if line >= self.height:
             return
-        space_left = self.width - col - 1 #always omit last column, avoids problems.
+        space_left = self.width - col - 1  # always omit last column, avoids problems.
         if space_left <= 0:
             return
         self.win.addstr(line, col, string[:space_left], attr)
@@ -263,11 +257,11 @@ class Win:
 
 class WinConsole(Win):
     """The console window at the bottom"""
-    def __init__(self, stdscr, gox):
-        """create the console window and connect it to the Gox debug
+    def __init__(self, stdscr, instance):
+        """create the console window and connect it to the instance's debug
         callback function"""
-        self.gox = gox
-        gox.signal_debug.connect(self.slot_debug)
+        self.instance = instance
+        instance.signal_debug.connect(self.slot_debug)
         Win.__init__(self, stdscr)
 
     def paint(self):
@@ -288,9 +282,9 @@ class WinConsole(Win):
         self.width = self.termwidth - int(self.termwidth / 2) - 2
         self.posy = self.termheight - self.height
 
-    def slot_debug(self, dummy_gox, (txt)):
+    def slot_debug(self, dummy_instance, (txt)):
         """this slot will be connected to all debug signals."""
-        if txt.startswith('[s]') == False:
+        if txt.startswith('[s]') is False:
             self.write(txt)
 
     def write(self, txt):
@@ -301,17 +295,17 @@ class WinConsole(Win):
         # This code would break if the format of
         # the log messages would ever change!
         if " tick:" in txt:
-            if not self.gox.config.get_bool("goxtool", "show_ticker"):
+            if not self.instance.config.get_bool("pytrader", "show_ticker"):
                 return
         if "depth:" in txt:
-            if not self.gox.config.get_bool("goxtool", "show_depth"):
+            if not self.instance.config.get_bool("pytrader", "show_depth"):
                 return
         if "trade:" in txt:
             if "own order" in txt:
-                if not self.gox.config.get_bool("goxtool", "show_trade_own"):
+                if not self.instance.config.get_bool("pytrader", "show_trade_own"):
                     return
             else:
-                if not self.gox.config.get_bool("goxtool", "show_trade"):
+                if not self.instance.config.get_bool("pytrader", "show_trade"):
                     return
 
         col = COLOR_PAIR["con_text"]
@@ -319,23 +313,23 @@ class WinConsole(Win):
             col = COLOR_PAIR["con_text_buy"] + curses.A_BOLD
         if "trade: ask:" in txt:
             col = COLOR_PAIR["con_text_sell"] + curses.A_BOLD
-        self.win.addstr("\n" + txt,  col)
+        self.win.addstr("\n" + txt, col)
         self.done_paint()
 
 class PluginConsole(Win):
     """The console window at the bottom"""
-    def __init__(self, stdscr, gox):
-        """create the console window and connect it to the Gox debug
+    def __init__(self, stdscr, instance):
+        """create the console window and connect it to the instance's debug
         callback function"""
-        self.gox = gox
-        gox.signal_debug.connect(self.slot_debug)
+        self.instance = instance
+        instance.signal_debug.connect(self.slot_debug)
         Win.__init__(self, stdscr)
 
     def paint(self):
         """just empty the window after resize (I am lazy)"""
         self.win.bkgd(" ", COLOR_PAIR["con_text"])
         for i in range(HEIGHT_CON):
-            self.win.addstr("\n ",  COLOR_PAIR["con_separator"])
+            self.win.addstr("\n ", COLOR_PAIR["con_separator"])
 
     def resize(self):
         """resize and print a log message. Old messages will have been
@@ -352,26 +346,26 @@ class PluginConsole(Win):
         self.posy = self.termheight - self.height
         self.posx = self.termwidth - int(self.termwidth / 2) + 1
 
-    def slot_debug(self, dummy_gox, (txt)):
+    def slot_debug(self, dummy_instance, (txt)):
         """this slot will be connected to all plugin debug signals."""
         if (txt.startswith('[s]')):
             self.write(txt.replace('[s]', ' '))
 
     def write(self, txt):
         """write a line of text, scroll if needed"""
-        self.win.addstr("\n ",  COLOR_PAIR["con_separator"])
-        self.win.addstr(txt,  COLOR_PAIR["con_text"])
+        self.win.addstr("\n ", COLOR_PAIR["con_separator"])
+        self.win.addstr(txt, COLOR_PAIR["con_text"])
         self.done_paint()
 
 
 class WinOrderBook(Win):
     """the orderbook window"""
 
-    def __init__(self, stdscr, gox):
+    def __init__(self, stdscr, instance):
         """create the orderbook window and connect it to the
-        onChanged callback of the gox.orderbook instance"""
-        self.gox = gox
-        gox.orderbook.signal_changed.connect(self.slot_changed)
+        onChanged callback of the instance.orderbook instance"""
+        self.instance = instance
+        instance.orderbook.signal_changed.connect(self.slot_changed)
         Win.__init__(self, stdscr)
 
     def calc_size(self):
@@ -391,16 +385,16 @@ class WinOrderBook(Win):
                 col2 = col_ask + curses.A_BOLD
             else:
                 col2 = col_vol
-            self.addstr(pos, 0,  book.gox.quote2str(price), color)
-            self.addstr(pos, 12, book.gox.base2str(vol), col2)
-            if ownvol:
-                self.addstr(pos, 28, book.gox.base2str(ownvol), col_own)
+            self.addstr(pos, 0, str(price), color)
+            self.addstr(pos, 12, str(vol), col2)
+            # if ownvol:
+            self.addstr(pos, 28, str(ownvol), col_own)
 
-        self.win.bkgd(" ",  COLOR_PAIR["book_text"])
+        self.win.bkgd(" ", COLOR_PAIR["book_text"])
         self.win.erase()
 
-        gox = self.gox
-        book = gox.orderbook
+        instance = self.instance
+        book = instance.orderbook
 
         mid = self.height / 2
         col_bid = COLOR_PAIR["book_bid"]
@@ -408,13 +402,11 @@ class WinOrderBook(Win):
         col_vol = COLOR_PAIR["book_vol"]
         col_own = COLOR_PAIR["book_own"]
 
-        sum_total = gox.config.get_bool("goxtool", "orderbook_sum_total")
-        group = gox.config.get_float("goxtool", "orderbook_group")
-        group = gox.quote2int(group)
+        sum_total = instance.config.get_bool("pytrader", "orderbook_sum_total")
+        group = instance.config.get_float("pytrader", "orderbook_group")
         if group == 0:
             group = 1
 
-        #
         #
         # paint the asks (first we put them into bins[] then we paint them)
         #
@@ -440,7 +432,7 @@ class WinOrderBook(Win):
                     pos -= 1
                     i += 1
 
-            # with gouping its a bit more complicated
+            # with grouping its a bit more complicated
             else:
                 # first bin is exact lowest ask price
                 price = book.asks[0].price
@@ -450,12 +442,12 @@ class WinOrderBook(Win):
                 pos -= 1
 
                 # now all following bins
-                bin_price = int(math.ceil(float(price) / group) * group)
+                bin_price = math.ceil(price / group) * group
                 if bin_price == price:
                     # first level was exact bin price already, skip to next bin
                     bin_price += group
                 while pos >= 0 and bin_price < book.asks[-1].price + group:
-                    vol, _vol_quote = book.get_total_up_to(bin_price, True)          ## 01 freeze
+                    vol, _vol_quote = book.get_total_up_to(bin_price, True)  # 01 freeze
                     if vol > prev_vol:
                         # append only non-empty bins
                         if sum_total:
@@ -465,11 +457,12 @@ class WinOrderBook(Win):
                         prev_vol = vol
                         pos -= 1
                     bin_price += group
+                    bin_price = math.ceil(bin_price / group) * group
 
                 # now add the own volumes to their bins
                 for order in book.owns:
                     if order.typ == "ask" and order.price > 0:
-                        order_bin_price = int(math.ceil(float(order.price) / group) * group)
+                        order_bin_price = math.ceil(float(order.price) / group) * group
                         for abin in bins:
                             if abin[1] == order.price:
                                 abin[3] += order.volume
@@ -479,9 +472,9 @@ class WinOrderBook(Win):
                                 break
 
             # mark the level where change took place (optional)
-            if gox.config.get_bool("goxtool", "highlight_changes"):
+            if instance.config.get_bool("pytrader", "highlight_changes"):
                 if book.last_change_type == "ask":
-                    change_bin_price = int(math.ceil(float(book.last_change_price) / group) * group)
+                    change_bin_price = math.ceil(float(book.last_change_price) / group) * group
                     for abin in bins:
                         if abin[1] == book.last_change_price:
                             abin[4] = book.last_change_volume
@@ -492,9 +485,8 @@ class WinOrderBook(Win):
 
             # now finally paint the asks
             for pos, price, vol, ownvol, changevol in bins:
-                paint_row(pos, price, vol, ownvol, col_ask, changevol)
+                paint_row(pos, str(price), str(vol), str(ownvol), col_ask, changevol)
 
-        #
         #
         # paint the bids (first we put them into bins[] then we paint them)
         #
@@ -531,7 +523,7 @@ class WinOrderBook(Win):
                 pos += 1
 
                 # now all following bins
-                bin_price = int(math.floor(float(price) / group) * group)
+                bin_price = math.floor(float(price) / group) * group
                 if bin_price == price:
                     # first level was exact bin price already, skip to next bin
                     bin_price -= group
@@ -546,11 +538,12 @@ class WinOrderBook(Win):
                         prev_vol = vol
                         pos += 1
                     bin_price -= group
+                    bin_price = math.floor(bin_price / group) * group
 
                 # now add the own volumes to their bins
                 for order in book.owns:
                     if order.typ == "bid" and order.price > 0:
-                        order_bin_price = int(math.floor(float(order.price) / group) * group)
+                        order_bin_price = math.floor(float(order.price) / group) * group
                         for abin in bins:
                             if abin[1] == order.price:
                                 abin[3] += order.volume
@@ -560,9 +553,9 @@ class WinOrderBook(Win):
                                 break
 
             # mark the level where change took place (optional)
-            if gox.config.get_bool("goxtool", "highlight_changes"):
+            if instance.config.get_bool("pytrader", "highlight_changes"):
                 if book.last_change_type == "bid":
-                    change_bin_price = int(math.floor(float(book.last_change_price) / group) * group)
+                    change_bin_price = math.floor(float(book.last_change_price) / group) * group
                     for abin in bins:
                         if abin[1] == book.last_change_price:
                             abin[4] = book.last_change_volume
@@ -576,13 +569,13 @@ class WinOrderBook(Win):
                 paint_row(pos, price, vol, ownvol, col_bid, changevol)
 
         # update the xterm title bar
-        if self.gox.config.get_bool("goxtool", "set_xterm_title"):
-            last_candle = self.gox.history.last_candle()
+        if self.instance.config.get_bool("pytrader", "set_xterm_title"):
+            last_candle = self.instance.history.last_candle()
             if last_candle:
-                title = self.gox.quote2str(last_candle.cls).strip()
-                title += " - goxtool -"
-                title += " bid:" + self.gox.quote2str(book.bid).strip()
-                title += " ask:" + self.gox.quote2str(book.ask).strip()
+                title = str(last_candle.cls)
+                title += " - PyTrader -"
+                title += " bid:" + str(book.bid)
+                title += " ask:" + str(book.ask)
 
                 term = os.environ["TERM"]
                 # the following is incomplete but better safe than sorry
@@ -602,13 +595,13 @@ TYPE_ORDERBOOK = 2
 class WinChart(Win):
     """the chart window"""
 
-    def __init__(self, stdscr, gox):
-        self.gox = gox
+    def __init__(self, stdscr, instance):
+        self.instance = instance
         self.pmin = 0
         self.pmax = 0
         self.change_type = None
-        gox.history.signal_changed.connect(self.slot_history_changed)
-        gox.orderbook.signal_changed.connect(self.slot_orderbook_changed)
+        instance.history.signal_changed.connect(self.slot_history_changed)
+        instance.orderbook.signal_changed.connect(self.slot_orderbook_changed)
 
         # some terminals do not support reverse video
         # so we cannot use reverse space for candle bodies
@@ -616,7 +609,7 @@ class WinChart(Win):
             self.body_char = " "
             self.body_attr = curses.A_REVERSE
         else:
-            self.body_char = curses.ACS_CKBOARD # pylint: disable=E1101
+            self.body_char = curses.ACS_CKBOARD
             self.body_attr = 0
 
         Win.__init__(self, stdscr)
@@ -649,8 +642,7 @@ class WinChart(Win):
 
     def price_to_screen(self, price):
         """convert price into screen coordinates (y=0 is at the top!)"""
-        relative_from_bottom = \
-            float(price - self.pmin) / float(self.pmax - self.pmin)
+        relative_from_bottom = float(price - self.pmin) / float(self.pmax - self.pmin)
         screen_from_bottom = relative_from_bottom * self.height
         return int(self.height - screen_from_bottom)
 
@@ -660,12 +652,12 @@ class WinChart(Win):
         pmax to determine how many digits are needed so that all numbers
         will be nicely aligned at the decimal point"""
 
-        fprice = self.gox.quote2float(price)
+        fprice = float(price)
         labelstr = ("%f" % fprice).rstrip("0").rstrip(".")
 
         # look at pmax to determine the max number of digits before the decimal
         # and then pad all smaller prices with spaces to make them align nicely.
-        need_digits = int(math.log10(self.gox.quote2float(self.pmax))) + 1
+        need_digits = int(math.log10(float(self.pmax))) + 1
         have_digits = len(str(int(fprice)))
         if have_digits < need_digits:
             padding = " " * (need_digits - have_digits)
@@ -680,9 +672,9 @@ class WinChart(Win):
     def paint_candle(self, posx, candle):
         """paint a single candle"""
 
-        sopen  = self.price_to_screen(candle.opn)
-        shigh  = self.price_to_screen(candle.hig)
-        slow   = self.price_to_screen(candle.low)
+        sopen = self.price_to_screen(candle.opn)
+        shigh = self.price_to_screen(candle.hig)
+        slow = self.price_to_screen(candle.low)
         sclose = self.price_to_screen(candle.cls)
 
         for posy in range(self.height):
@@ -702,7 +694,7 @@ class WinChart(Win):
                 self.addch(posy, posx, curses.ACS_VLINE, COLOR_PAIR["chart_text"])
 
     def paint(self):
-        typ = self.gox.config.get_string("goxtool", "display_right")
+        typ = self.instance.config.get_string("pytrader", "display_right")
         if typ == "history_chart":
             self.paint_history_chart()
         elif typ == "depth_chart":
@@ -713,34 +705,29 @@ class WinChart(Win):
     def paint_depth_chart(self):
         """paint a depth chart"""
 
-        # pylint: disable=C0103
-        if self.gox.curr_quote in "JPY SEK":
-            BAR_LEFT_EDGE = 7
-            FORMAT_STRING = "%6.0f"
-        else:
-            BAR_LEFT_EDGE = 8
-            FORMAT_STRING = "%7.2f"
+        BAR_LEFT_EDGE = 11
+        FORMAT_STRING = "%7.8f"
 
         def paint_depth(pos, price, vol, own, col_price, change):
             """paint one row of the depth chart"""
+            # self.instance.debug("pos: %s, change: %s, own: %s, price: %s, col_price: %s, vol: %s" % (pos, change, own, price, col_price, vol))
             if change > 0:
                 col = col_bid + curses.A_BOLD
             elif change < 0:
                 col = col_ask + curses.A_BOLD
             else:
                 col = col_bar
-            pricestr = FORMAT_STRING % self.gox.quote2float(price)
+            pricestr = FORMAT_STRING % price
             self.addstr(pos, 0, pricestr, col_price)
             length = int(vol * mult_x)
-            # pylint: disable=E1101
             self.win.hline(pos, BAR_LEFT_EDGE, curses.ACS_CKBOARD, length, col)
             if own:
                 self.addstr(pos, length + BAR_LEFT_EDGE, "o", col_own)
 
-        self.win.bkgd(" ",  COLOR_PAIR["chart_text"])
+        self.win.bkgd(" ", COLOR_PAIR["chart_text"])
         self.win.erase()
 
-        book = self.gox.orderbook
+        book = self.instance.orderbook
         if not (book.bid and book.ask and len(book.bids) and len(book.asks)):
             # orderbook is not initialized yet, paint nothing
             return
@@ -750,25 +737,23 @@ class WinChart(Win):
         col_ask = COLOR_PAIR["book_ask"]
         col_own = COLOR_PAIR["book_own"]
 
-        group = self.gox.config.get_float("goxtool", "depth_chart_group")
+        group = self.instance.config.get_float("pytrader", "depth_chart_group")
         if group == 0:
-            group = 1
-        group = self.gox.quote2int(group)
+            group = 0.00000001
 
         max_vol_ask = 0
         max_vol_bid = 0
         bin_asks = []
         bin_bids = []
         mid = self.height / 2
-        sum_total = self.gox.config.get_bool("goxtool", "depth_chart_sum_total")
+        sum_total = self.instance.config.get_bool("pytrader", "depth_chart_sum_total")
 
-        #
         #
         # bin the asks
         #
         pos = mid - 1
         prev_vol = 0
-        bin_price = int(math.ceil(float(book.asks[0].price) / group) * group)
+        bin_price = math.ceil(book.asks[0].price / group) * group
         while pos >= 0 and bin_price < book.asks[-1].price + group:
             bin_vol, _bin_vol_quote = book.get_total_up_to(bin_price, True)
             if bin_vol > prev_vol:
@@ -782,17 +767,17 @@ class WinChart(Win):
                 prev_vol = bin_vol
                 pos -= 1
             bin_price += group
+            bin_price = math.ceil(bin_price / group) * group
 
-        #
         #
         # bin the bids
         #
         pos = mid + 1
         prev_vol = 0
-        bin_price = int(math.floor(float(book.bids[0].price) / group) * group)
+        bin_price = math.floor(book.bids[0].price / group) * group
         while pos < self.height and bin_price >= 0:
             _bin_vol_base, bin_vol_quote = book.get_total_up_to(bin_price, False)
-            bin_vol = self.gox.base2int(bin_vol_quote / book.bid)
+            bin_vol = float(bin_vol_quote / book.bid)
             if bin_vol > prev_vol:
                 # add only non-empty bins
                 if sum_total:
@@ -804,6 +789,7 @@ class WinChart(Win):
                 prev_vol = bin_vol
                 pos += 1
             bin_price -= group
+            bin_price = math.floor(bin_price / group) * group
 
         max_vol_tot = max(max_vol_ask, max_vol_bid)
         if not max_vol_tot:
@@ -814,29 +800,29 @@ class WinChart(Win):
         for order in book.owns:
             if order.price > 0:
                 if order.typ == "ask":
-                    bin_price = int(math.ceil(float(order.price) / group) * group)
+                    bin_price = math.ceil(order.price / group) * group
                     for abin in bin_asks:
                         if abin[1] == bin_price:
                             abin[3] += order.volume
                             break
                 else:
-                    bin_price = int(math.floor(float(order.price) / group) * group)
+                    bin_price = math.floor(order.price / group) * group
                     for abin in bin_bids:
                         if abin[1] == bin_price:
                             abin[3] += order.volume
                             break
 
         # highlight the relative change (optional)
-        if self.gox.config.get_bool("goxtool", "highlight_changes"):
+        if self.instance.config.get_bool("pytrader", "highlight_changes"):
             price = book.last_change_price
             if book.last_change_type == "ask":
-                bin_price = int(math.ceil(float(price) / group) * group)
+                bin_price = math.ceil(price / group) * group
                 for abin in bin_asks:
                     if abin[1] == bin_price:
                         abin[4] = book.last_change_volume
                         break
             if book.last_change_type == "bid":
-                bin_price = int(math.floor(float(price) / group) * group)
+                bin_price = math.floor(price / group) * group
                 for abin in bin_bids:
                     if abin[1] == bin_price:
                         abin[4] = book.last_change_volume
@@ -858,11 +844,11 @@ class WinChart(Win):
             # beause we won't redraw the chart, its only an orderbook change
             self.win.vline(0, self.width - 1, " ", self.height, COLOR_PAIR["chart_text"])
         else:
-            self.win.bkgd(" ",  COLOR_PAIR["chart_text"])
+            self.win.bkgd(" ", COLOR_PAIR["chart_text"])
             self.win.erase()
 
-        hist = self.gox.history
-        book = self.gox.orderbook
+        hist = self.instance.history
+        book = self.instance.orderbook
 
         self.pmax = 0
         self.pmin = 9999999999
@@ -900,7 +886,7 @@ class WinChart(Win):
             posx = 0
             step = self.get_optimal_step(4)
             if step:
-                labelprice = int(self.pmin / step) * step
+                labelprice = self.pmin / step
                 while not labelprice > self.pmax:
                     posy = self.price_to_screen(labelprice)
                     if posy < self.height - 1:
@@ -913,24 +899,19 @@ class WinChart(Win):
             if self.is_in_range(order.price):
                 posy = self.price_to_screen(order.price)
                 if order.status == "pending":
-                    self.addch(posy, posx,
-                        ord("p"), COLOR_PAIR["order_pending"])
+                    self.addch(posy, posx, ord("p"), COLOR_PAIR["order_pending"])
                 else:
-                    self.addch(posy, posx,
-                        ord("o"), COLOR_PAIR["book_own"])
+                    self.addch(posy, posx, ord("o"), COLOR_PAIR["book_own"])
 
         if self.is_in_range(book.bid):
             posy = self.price_to_screen(book.bid)
             # pylint: disable=E1101
-            self.addch(posy, posx,
-                curses.ACS_HLINE, COLOR_PAIR["chart_up"])
+            self.addch(posy, posx, curses.ACS_HLINE, COLOR_PAIR["chart_up"])
 
         if self.is_in_range(book.ask):
             posy = self.price_to_screen(book.ask)
             # pylint: disable=E1101
-            self.addch(posy, posx,
-                curses.ACS_HLINE, COLOR_PAIR["chart_down"])
-
+            self.addch(posy, posx, curses.ACS_HLINE, COLOR_PAIR["chart_down"])
 
     def slot_history_changed(self, _sender, _data):
         """Slot for history changed"""
@@ -948,15 +929,15 @@ class WinChart(Win):
 class WinStatus(Win):
     """the status window at the top"""
 
-    def __init__(self, stdscr, gox):
+    def __init__(self, stdscr, instance):
         """create the status window and connect the needed callbacks"""
-        self.gox = gox
+        self.instance = instance
         self.order_lag = 0
         self.order_lag_txt = ""
         self.sorted_currency_list = []
-        gox.signal_orderlag.connect(self.slot_orderlag)
-        gox.signal_wallet.connect(self.slot_changed)
-        gox.orderbook.signal_changed.connect(self.slot_changed)
+        instance.signal_orderlag.connect(self.slot_orderlag)
+        instance.signal_wallet.connect(self.slot_changed)
+        instance.orderbook.signal_changed.connect(self.slot_changed)
         Win.__init__(self, stdscr)
 
     def calc_size(self):
@@ -966,25 +947,25 @@ class WinStatus(Win):
     def sort_currency_list_if_changed(self):
         """sort the currency list in the wallet for better display,
         sort it only if it has changed, otherwise leave it as it is"""
-        currency_list = self.gox.wallet.keys()
+        currency_list = self.instance.wallet.keys()
         if len(currency_list) == len(self.sorted_currency_list):
             return
 
         # now we will bring base and quote currency to the front and sort the
         # the rest of the list of names by acount balance in descending order
-        if self.gox.curr_base in currency_list:
-            currency_list.remove(self.gox.curr_base)
-        if self.gox.curr_quote in currency_list:
-            currency_list.remove(self.gox.curr_quote)
-        currency_list.sort(key=lambda name: -self.gox.wallet[name])
-        currency_list.insert(0, self.gox.curr_quote)
-        currency_list.insert(0, self.gox.curr_base)
+        if self.instance.curr_base in currency_list:
+            currency_list.remove(self.instance.curr_base)
+        if self.instance.curr_quote in currency_list:
+            currency_list.remove(self.instance.curr_quote)
+        currency_list.sort(key=lambda name: -self.instance.wallet[name])
+        currency_list.insert(0, self.instance.curr_quote)
+        currency_list.insert(0, self.instance.curr_base)
         self.sorted_currency_list = currency_list
 
     def paint(self):
         """paint the complete status"""
-        cbase = self.gox.curr_base
-        cquote = self.gox.curr_quote
+        cbase = self.instance.curr_base
+        cquote = self.instance.curr_quote
         self.sort_currency_list_if_changed()
         self.win.bkgd(" ", COLOR_PAIR["status_text"])
         self.win.erase()
@@ -993,9 +974,9 @@ class WinStatus(Win):
         # first line
         #
         self.addstr(0, 0, "Price: ", COLOR_PAIR["status_text"])
-        self.addstr("%f" % self.gox.quote2float(self.gox.orderbook.bid), COLOR_PAIR["status_text"] + curses.A_BOLD)
+        self.addstr("%f" % float(self.instance.orderbook.bid), COLOR_PAIR["status_text"] + curses.A_BOLD)
         self.addstr(" - ", COLOR_PAIR["status_text"])
-        self.addstr("%f" % self.gox.quote2float(self.gox.orderbook.ask), COLOR_PAIR["status_text"] + curses.A_BOLD)
+        self.addstr("%f" % float(self.instance.orderbook.ask), COLOR_PAIR["status_text"] + curses.A_BOLD)
 
         self.addstr(" | Market: ", COLOR_PAIR["status_text"])
         self.addstr("%s%s" % (cbase, cquote), COLOR_PAIR["status_text"] + curses.A_BOLD)
@@ -1003,29 +984,30 @@ class WinStatus(Win):
         self.addstr(" | Account: ", COLOR_PAIR["status_text"])
         if len(self.sorted_currency_list):
             own_currencies = []
-            total_btc = 0
-            total_fiat = 0
+            total_base = 0
+            total_quote = 0
             for currency in self.sorted_currency_list:
-                if currency in self.gox.wallet:
+                if currency in self.instance.wallet:
                     own_currencies.append(currency)
             for c, own_currency in enumerate(own_currencies):
-                self.addstr("%s" % own_currency, COLOR_PAIR["status_text"] + curses.A_BOLD)
-                self.addstr(" ", COLOR_PAIR["status_text"])
-                self.addstr("%f" % goxapi.int2float(self.gox.wallet[own_currency], own_currency), COLOR_PAIR["status_text"] + curses.A_BOLD)
-                if own_currency == 'BTC' and self.gox.wallet and self.gox.orderbook.ask:
-                    total_btc += self.gox.base2float(self.gox.wallet['BTC'])
-                    total_fiat += self.gox.base2float(self.gox.wallet['BTC']) * self.gox.orderbook.ask
-                elif own_currency == cquote and self.gox.wallet and self.gox.orderbook.bid:
-                    total_fiat += float(self.gox.wallet[own_currency])
-                    total_btc += self.gox.quote2float(self.gox.wallet[own_currency]) / self.gox.quote2float(self.gox.orderbook.bid)
+                # self.instance.debug("%s: %s" % (own_currency, self.instance.wallet[own_currency]))
+                self.addstr("%f %s" % (self.instance.wallet[own_currency], own_currency), COLOR_PAIR["status_text"] + curses.A_BOLD)
+                if own_currency == cbase and self.instance.wallet and self.instance.orderbook.ask:
+                    total_base += self.instance.wallet[own_currency]
+                    total_quote += self.instance.wallet[own_currency] * self.instance.orderbook.ask
+                elif own_currency == cquote and self.instance.wallet and self.instance.orderbook.bid:
+                    total_quote += self.instance.wallet[own_currency]
+                    total_base += self.instance.wallet[own_currency] / self.instance.orderbook.bid
                 if (c + 1 != len(own_currencies)):
                     self.addstr(" + ", COLOR_PAIR["status_text"])
-            self.addstr(" | %s%s total: " % (cbase, cquote), COLOR_PAIR["status_text"])
-            self.addstr("%f BTC" % total_btc, COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr(" | Totals: ", COLOR_PAIR["status_text"])
+            self.addstr("%f %s" % (total_base, cbase), COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" / ", COLOR_PAIR["status_text"])
-            self.addstr("%f %s" % (self.gox.quote2float(total_fiat), cquote), COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr("%f %s" % (float(total_quote), cquote), COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr(" | %s order(s)" % len(self.instance.orderbook.owns))
+            self.addstr(" | Volume: %s %s" % (self.instance.monthly_volume, self.instance.currency))
             self.addstr(" | Fee: ", COLOR_PAIR["status_text"])
-            self.addstr("%s" % self.gox.trade_fee, COLOR_PAIR["status_text"] + curses.A_BOLD)
+            self.addstr("%s" % self.instance.trade_fee, COLOR_PAIR["status_text"] + curses.A_BOLD)
             self.addstr(" %", COLOR_PAIR["status_text"])
         else:
             self.addstr("No info (yet)", COLOR_PAIR["status_text"] + curses.A_BOLD)
@@ -1034,12 +1016,12 @@ class WinStatus(Win):
         # second line
         #
         line2 = ""
-        if self.gox.config.get_bool("goxtool", "show_orderbook_stats"):
-            str_btc = locale.format('%d', self.gox.orderbook.total_ask, 1)
-            str_fiat = locale.format('%d', self.gox.orderbook.total_bid, 1)
-            if self.gox.orderbook.total_ask:
-                str_ratio = locale.format('%1.2f',
-                    self.gox.orderbook.total_bid / self.gox.orderbook.total_ask, 1)
+        if self.instance.config.get_bool("pytrader", "show_orderbook_stats"):
+            str_btc = locale.format('%d', self.instance.orderbook.total_ask, 1)
+            str_fiat = locale.format('%d', self.instance.orderbook.total_bid, 1)
+            if self.instance.orderbook.total_ask:
+                ratio = (self.instance.orderbook.total_bid / self.instance.orderbook.total_ask) * self.instance.orderbook.ask
+                str_ratio = locale.format('%1.5f', ratio, 1)
             else:
                 str_ratio = "-"
 
@@ -1047,16 +1029,19 @@ class WinStatus(Win):
             line2 += "sum_ask: %s %s | " % (str_btc, cbase)
             line2 += "ratio: %s %s/%s | " % (str_ratio, cquote, cbase)
 
-        line2 += "lag: %s / " % self.order_lag_txt
-        line2 += "%.3f s " % (self.gox.socket_lag / 1e6)
-        line2 += "(order / socket)"
+        line2 += "lag: %s" % self.order_lag_txt
+        if self.instance.socket_lag:
+            line2 += " %.3f s " % (self.instance.socket_lag / 1e6)
+            line2 += "(order / socket)"
+        line2 += " | "
+        line2 += "depth: %s / " % self.instance.orderbook.depth_updated
+        line2 += "orders: %s" % self.instance.orderbook.orders_updated
 
         # self.addstr(0, 0, line1, COLOR_PAIR["status_text"])
         self.addstr(1, 0, line2, COLOR_PAIR["status_text"])
 
-
     def slot_changed(self, dummy_sender, dummy_data):
-        """the callback funtion called by the Gox() instance"""
+        """the callback funtion called by the Api() instance"""
         self.do_paint()
 
     def slot_orderlag(self, dummy_sender, (usec, text)):
@@ -1100,21 +1085,24 @@ class DlgListItems(Win):
         raise NotImplementedError()
 
     def paint(self):
-        self.win.bkgd(" ", COLOR_PAIR["dialog_text"])
-        self.win.erase()
-        self.win.border()
-        self.addstr(0, 1, " %s " % self.dlg_title, COLOR_PAIR["dialog_text"])
-        index = self.item_top
-        posy = 2
-        while posy < self.height - 3 and index < len(self.items):
-            self.paint_item(posy, index)
-            index += 1
-            posy += 1
+        try:
+            self.win.bkgd(" ", COLOR_PAIR["dialog_text"])
+            self.win.erase()
+            self.win.border()
+            self.addstr(0, 1, " %s " % self.dlg_title, COLOR_PAIR["dialog_text"])
+            index = self.item_top
+            posy = 2
+            while posy < self.height - 3 and index < len(self.items):
+                self.paint_item(posy, index)
+                index += 1
+                posy += 1
 
-        self.win.move(self.height - 2, 2)
-        for key, desc in self.dlg_hlp:
-            self.addstr(key + " ",  COLOR_PAIR["dialog_sel"])
-            self.addstr(desc + " ", COLOR_PAIR["dialog_text"])
+            self.win.move(self.height - 2, 2)
+            for key, desc in self.dlg_hlp:
+                self.addstr(key + " ", COLOR_PAIR["dialog_sel"])
+                self.addstr(desc + " ", COLOR_PAIR["dialog_text"])
+        except Exception:
+            self.instance.debug(traceback.format_exc())
 
     def down(self, num):
         """move the cursor down (or up)"""
@@ -1173,20 +1161,23 @@ class DlgListItems(Win):
 
 class DlgCancelOrders(DlgListItems):
     """modal dialog to cancel orders"""
-    def __init__(self, stdscr, gox):
-        self.gox = gox
+    def __init__(self, stdscr, instance):
+        self.instance = instance
         hlp = [("INS / =", "select"), ("F8", "cancel selected"), ("F10", "exit")]
         keys = [(curses.KEY_F8, self._do_cancel)]
         DlgListItems.__init__(self, stdscr, 45, "Cancel order(s)", hlp, keys)
 
     def init_items(self):
-        for order in self.gox.orderbook.owns:
+        for order in self.instance.orderbook.owns:
+            # self.instance.debug("oid: %s, typ: %s, price: %s, volume: %s" % (order.oid, order.typ, order.price, order.volume))
             self.items.append(order)
-        self.items.sort(key = lambda o: -o.price)
+        self.items.sort(key=lambda o: -o.price)
+        # self.instance.debug("items: %s" % self.items)
 
     def paint_item(self, posy, index):
         """paint one single order"""
         order = self.items[index]
+        # self.instance.debug("order: %s, selected: %s" % (order, self.selected))
         if order in self.selected:
             marker = "*"
             if index == self.item_sel:
@@ -1202,15 +1193,15 @@ class DlgCancelOrders(DlgListItems):
 
         self.addstr(posy, 2, marker, attr)
         self.addstr(posy, 5, order.typ, attr)
-        self.addstr(posy, 9, self.gox.quote2str(order.price), attr)
-        self.addstr(posy, 22, self.gox.base2str(order.volume), attr)
+        self.addstr(posy, 9, str(order.price), attr)
+        self.addstr(posy, 22, str(order.volume), attr)
 
     def _do_cancel(self):
         """cancel all selected orders (or the order under cursor if empty)"""
 
         def do_cancel(order):
             """cancel a single order"""
-            self.gox.cancel(order.oid)
+            self.instance.cancel(order.oid)
 
         if not len(self.items):
             return
@@ -1242,7 +1233,7 @@ class TextBox():
         """enter te edit box modal loop"""
         self.win.move(0, 0)
         self.editing = True
-        goxapi.start_thread(self.cursor_placement_thread, "TextBox cursor placement")
+        api.start_thread(self.cursor_placement_thread, "TextBox cursor placement")
         self.value = self.box.edit(self.validator)
         self.editing = False
         return self.result
@@ -1277,7 +1268,7 @@ class TextBox():
         force it into the edit field by repainting it very often."""
         while self.editing:
             # pylint: disable=W0212
-            with goxapi.Signal._lock:
+            with api.Signal._lock:
                 curses.curs_set(2)
                 self.win.touchwin()
                 self.win.refresh()
@@ -1302,8 +1293,8 @@ class NumberBox(TextBox):
 
 class DlgNewOrder(Win):
     """abtract base class for entering new orders"""
-    def __init__(self, stdscr, gox, color, title):
-        self.gox = gox
+    def __init__(self, stdscr, instance, color, title):
+        self.instance = instance
         self.color = color
         self.title = title
         self.edit_price = None
@@ -1322,9 +1313,9 @@ class DlgNewOrder(Win):
         self.win.border()
         self.addstr(0, 1, " %s " % self.title, self.color)
         self.addstr(2, 2, " price", self.color)
-        self.addstr(2, 30, self.gox.curr_quote)
+        self.addstr(2, 30, self.instance.curr_quote)
         self.addstr(4, 2, "volume", self.color)
-        self.addstr(4, 30, self.gox.curr_base)
+        self.addstr(4, 30, self.instance.curr_base)
         self.addstr(6, 2, "F10 ", self.color + curses.A_REVERSE)
         self.addstr("cancel ", self.color)
         self.addstr("Enter ", self.color + curses.A_REVERSE)
@@ -1346,29 +1337,29 @@ class DlgNewOrder(Win):
                 if focus == 1:
                     res = self.edit_price.modal()
                     if res == -1:
-                        break # cancel entire dialog
+                        break  # cancel entire dialog
                     if res in [10, curses.KEY_DOWN, curses.KEY_UP]:
                         try:
                             price_float = float(self.edit_price.value)
                             focus = 2
                         except ValueError:
-                            pass # can't move down until this is a valid number
+                            pass  # can't move down until this is a valid number
 
                 if focus == 2:
                     res = self.edit_volume.modal()
                     if res == -1:
-                        break # cancel entire dialog
+                        break  # cancel entire dialog
                     if res in [curses.KEY_UP, curses.KEY_DOWN]:
                         focus = 1
                     if res == 10:
                         try:
                             volume_float = float(self.edit_volume.value)
-                            break # have both values now, can submit order
+                            break  # have both values now, can submit order
                         except ValueError:
-                            pass # no float number, stay in this edit field
+                            pass  # no float number, stay in this edit field
 
             if res == -1:
-                #user has hit f10. just end here, do nothing
+                # user has hit f10. just end here, do nothing
                 pass
             if res == 10:
                 self.do_submit(price_float, volume_float)
@@ -1381,55 +1372,48 @@ class DlgNewOrder(Win):
 
 class DlgNewOrderBid(DlgNewOrder):
     """Modal dialog for new buy order"""
-    def __init__(self, stdscr, gox):
-        DlgNewOrder.__init__(self, stdscr, gox,
-            COLOR_PAIR["dialog_bid_text"],
-            "New buy order")
+    def __init__(self, stdscr, instance):
+        DlgNewOrder.__init__(self, stdscr, instance, COLOR_PAIR["dialog_bid_text"], "New buy order")
 
     def do_submit(self, price, volume):
-        price = self.gox.quote2int(price)
-        volume = self.gox.base2int(volume)
-        self.gox.buy(price, volume)
+        price = float(price)
+        volume = float(volume)
+        self.instance.buy(price, volume)
 
 
 class DlgNewOrderAsk(DlgNewOrder):
     """Modal dialog for new sell order"""
-    def __init__(self, stdscr, gox):
-        DlgNewOrder.__init__(self, stdscr, gox,
-             COLOR_PAIR["dialog_ask_text"],
-            "New sell order")
+    def __init__(self, stdscr, instance):
+        DlgNewOrder.__init__(self, stdscr, instance, COLOR_PAIR["dialog_ask_text"], "New sell order")
 
     def do_submit(self, price, volume):
-        price = self.gox.quote2int(price)
-        volume = self.gox.base2int(volume)
-        self.gox.sell(price, volume)
+        price = float(price)
+        volume = float(volume)
+        self.instance.sell(price, volume)
 
 
-
-#
 #
 # logging, printing, etc...
 #
 
 class LogWriter():
-    """connects to gox.signal_debug and logs it all to the logfile"""
-    def __init__(self, gox):
-        self.gox = gox
-        if self.gox.config.get_bool("goxtool", "dont_truncate_logfile"):
+    """connects to api.signal_debug and logs it all to the logfile"""
+    def __init__(self, instance):
+        self.instance = instance
+        if self.instance.config.get_bool("pytrader", "dont_truncate_logfile"):
             logfilemode = 'a'
         else:
             logfilemode = 'w'
 
-        logging.basicConfig(filename='goxtool.log'
-                           ,filemode=logfilemode
-                           ,format='%(asctime)s:%(levelname)s:%(message)s'
-                           ,level=logging.DEBUG
-                           )
-        self.gox.signal_debug.connect(self.slot_debug)
+        logging.basicConfig(filename='pytrader.log',
+                            filemode=logfilemode,
+                            format='%(asctime)s:%(levelname)s:%(message)s',
+                            level=logging.DEBUG)
+        self.instance.signal_debug.connect(self.slot_debug)
 
     def close(self):
         """stop logging"""
-        #not needed
+        # not needed
         pass
 
     # pylint: disable=R0201
@@ -1440,9 +1424,9 @@ class LogWriter():
 
 
 class PrintHook():
-    """intercept stdout/stderr and send it all to gox.signal_debug instead"""
-    def __init__(self, gox):
-        self.gox = gox
+    """intercept stdout/stderr and send it all to instance.signal_debug instead"""
+    def __init__(self, instance):
+        self.instance = instance
         self.stdout = sys.stdout
         self.stderr = sys.stderr
         sys.stdout = self
@@ -1454,14 +1438,12 @@ class PrintHook():
         sys.stderr = self.stderr
 
     def write(self, string):
-        """called when someone uses print(), send it to gox"""
+        """called when someone uses print(), send it to instance"""
         string = string.strip()
         if string != "":
-            self.gox.signal_debug(self, string)
+            self.instance.signal_debug(self, string)
 
 
-
-#
 #
 # dynamically (re)loadable strategy module
 #
@@ -1469,15 +1451,15 @@ class PrintHook():
 class StrategyManager():
     """load the strategy module"""
 
-    def __init__(self, gox, strategy_name_list):
+    def __init__(self, instance, strategy_name_list):
         self.strategy_object_list = []
         self.strategy_name_list = strategy_name_list
-        self.gox = gox
+        self.instance = instance
         self.reload()
 
     def unload(self):
         """unload the strategy, will trigger its the __del__ method"""
-        self.gox.signal_strategy_unload(self, None)
+        self.instance.signal_strategy_unload(self, None)
         self.strategy_object_list = []
 
     def reload(self):
@@ -1490,70 +1472,63 @@ class StrategyManager():
                 strategy_module = __import__(name)
                 try:
                     reload(strategy_module)
-                    strategy_object = strategy_module.Strategy(self.gox)
+                    strategy_object = strategy_module.Strategy(self.instance)
                     self.strategy_object_list.append(strategy_object)
                     if hasattr(strategy_object, "name"):
-                        self.gox.strategies[strategy_object.name] = strategy_object
+                        self.instance.strategies[strategy_object.name] = strategy_object
 
                 except Exception:
-                    self.gox.debug("### error while loading strategy %s.py, traceback follows:" % name)
-                    self.gox.debug(traceback.format_exc())
+                    self.instance.debug("### error while loading strategy %s.py, traceback follows:" % name)
+                    self.instance.debug(traceback.format_exc())
 
             except ImportError:
-                self.gox.debug("### could not import %s.py, traceback follows:" % name)
-                self.gox.debug(traceback.format_exc())
+                self.instance.debug("### could not import %s.py, traceback follows:" % name)
+                self.instance.debug(traceback.format_exc())
 
 
-def toggle_setting(gox, alternatives, option_name, direction):
+def toggle_setting(instance, alternatives, option_name, direction):
     """toggle a setting in the ini file"""
-    # pylint: disable=W0212
-    with goxapi.Signal._lock:
-        setting = gox.config.get_string("goxtool", option_name)
+    with api.Signal._lock:
+        setting = instance.config.get_string("pytrader", option_name)
         try:
             newindex = (alternatives.index(setting) + direction) % len(alternatives)
         except ValueError:
             newindex = 0
-        gox.config.set("goxtool", option_name, alternatives[newindex])
-        gox.config.save()
+        instance.config.set("pytrader", option_name, alternatives[newindex])
+        instance.config.save()
 
-def toggle_depth_group(gox, direction):
+def toggle_depth_group(instance, direction):
     """toggle the step width of the depth chart"""
-    if gox.curr_quote in "JPY SEK":
-        alt = ["5", "10", "25", "50", "100", "200", "500", "1000", "2000", "5000", "10000"]
-    else:
-        alt = ["0.05", "0.1", "0.25", "0.5", "1", "2", "5", "10", "20", "50", "100"]
-    toggle_setting(gox, alt, "depth_chart_group", direction)
-    gox.orderbook.signal_changed(gox.orderbook, None)
+    alt = ["0.00000001", "0.00000005", "0.0000001", "0.0000005", "0.000001", "0.000005", "0.00001", "0.00005", "0.0001", "0.0005",
+           "0.001", "0.005", "0.01", "0.05", "0.1", "0.5", "1", "5", "10", "20", "50", "100"]
+    toggle_setting(instance, alt, "depth_chart_group", direction)
+    instance.orderbook.signal_changed(instance.orderbook, None)
 
-def toggle_orderbook_group(gox, direction):
+def toggle_orderbook_group(instance, direction):
     """toggle the group width of the orderbook"""
-    if gox.curr_quote in "JPY SEK":
-        alt = ["0", "5", "10", "25", "50", "100", "200", "500", "1000", "2000", "5000", "10000"]
-    else:
-        alt = ["0", "0.05", "0.1", "0.25", "0.5", "1", "2", "5", "10", "20", "50", "100"]
-    toggle_setting(gox, alt, "orderbook_group", direction)
-    gox.orderbook.signal_changed(gox.orderbook, None)
+    alt = ["0", "0.00000001", "0.00000005", "0.0000001", "0.0000005", "0.000001", "0.000005", "0.00001", "0.00005", "0.0001", "0.0005",
+           "0.001", "0.005", "0.01", "0.05", "0.1", "0.5", "1", "5", "10", "20", "50", "100"]
+    toggle_setting(instance, alt, "orderbook_group", direction)
+    instance.orderbook.signal_changed(instance.orderbook, None)
 
-def toggle_orderbook_sum(gox):
+def toggle_orderbook_sum(instance):
     """toggle the summing in the orderbook on and off"""
     alt = ["False", "True"]
-    toggle_setting(gox, alt, "orderbook_sum_total", 1)
-    gox.orderbook.signal_changed(gox.orderbook, None)
+    toggle_setting(instance, alt, "orderbook_sum_total", 1)
+    instance.orderbook.signal_changed(instance.orderbook, None)
 
-def toggle_depth_sum(gox):
+def toggle_depth_sum(instance):
     """toggle the summing in the depth chart on and off"""
     alt = ["False", "True"]
-    toggle_setting(gox, alt, "depth_chart_sum_total", 1)
-    gox.orderbook.signal_changed(gox.orderbook, None)
+    toggle_setting(instance, alt, "depth_chart_sum_total", 1)
+    instance.orderbook.signal_changed(instance.orderbook, None)
 
-def set_ini(gox, setting, value, signal, signal_sender, signal_params):
+def set_ini(instance, setting, value, signal, signal_sender, signal_params):
     """set the ini value and then send a signal"""
-    # pylint: disable=W0212
-    with goxapi.Signal._lock:
-        gox.config.set("goxtool", setting, value)
-        gox.config.save()
+    with api.Signal._lock:
+        instance.config.set("pytrader", setting, value)
+        instance.config.save()
     signal(signal_sender, signal_params)
-
 
 
 #
@@ -1578,34 +1553,34 @@ def main():
         try:
             init_colors()
 
-            gox = goxapi.Gox(secret, config)
+            instance = api.Api(secret, config)
 
-            logwriter = LogWriter(gox)
-            printhook = PrintHook(gox)
+            logwriter = LogWriter(instance)
+            printhook = PrintHook(instance)
 
-            conwin = WinConsole(stdscr, gox)
-            plugwin = PluginConsole(stdscr, gox)
-            bookwin = WinOrderBook(stdscr, gox)
-            statuswin = WinStatus(stdscr, gox)
-            chartwin = WinChart(stdscr, gox)
+            conwin = WinConsole(stdscr, instance)
+            plugwin = PluginConsole(stdscr, instance)
+            bookwin = WinOrderBook(stdscr, instance)
+            statuswin = WinStatus(stdscr, instance)
+            chartwin = WinChart(stdscr, instance)
 
-            strategy_manager = StrategyManager(gox, strat_mod_list)
+            strategy_manager = StrategyManager(instance, strat_mod_list)
 
-            gox.start()
+            instance.start()
 
             while True:
                 key = stdscr.getch()
                 if key == ord("q"):
                     break
                 elif key == curses.KEY_F4:
-                    DlgNewOrderBid(stdscr, gox).modal()
+                    DlgNewOrderBid(stdscr, instance).modal()
                 elif key == curses.KEY_F5:
-                    DlgNewOrderAsk(stdscr, gox).modal()
+                    DlgNewOrderAsk(stdscr, instance).modal()
                 elif key == curses.KEY_F6:
-                    DlgCancelOrders(stdscr, gox).modal()
+                    DlgCancelOrders(stdscr, instance).modal()
                 elif key == curses.KEY_RESIZE:
                     # pylint: disable=W0212
-                    with goxapi.Signal._lock:
+                    with api.Signal._lock:
                         stdscr.erase()
                         stdscr.refresh()
                         conwin.resize()
@@ -1618,35 +1593,33 @@ def main():
 
                 # which chart to show on the right side
                 elif key == ord("H"):
-                    set_ini(gox, "display_right", "history_chart",
-                        gox.history.signal_changed, gox.history, None)
+                    set_ini(instance, "display_right", "history_chart", instance.history.signal_changed, instance.history, None)
                 elif key == ord("D"):
-                    set_ini(gox, "display_right", "depth_chart",
-                        gox.orderbook.signal_changed, gox.orderbook, None)
+                    set_ini(instance, "display_right", "depth_chart", instance.orderbook.signal_changed, instance.orderbook, None)
 
                 #  depth chart step
-                elif key == ord(","): # zoom out
-                    toggle_depth_group(gox, +1)
-                elif key == ord("."): # zoom in
-                    toggle_depth_group(gox, -1)
+                elif key == ord(","):  # zoom out
+                    toggle_depth_group(instance, +1)
+                elif key == ord("."):  # zoom in
+                    toggle_depth_group(instance, -1)
 
                 # orderbook grouping step
-                elif key == ord("-"): # zoom out (larger step)
-                    toggle_orderbook_group(gox, +1)
-                elif key == ord("+"): # zoom in (smaller step)
-                    toggle_orderbook_group(gox, -1)
+                elif key == ord("-"):  # zoom out (larger step)
+                    toggle_orderbook_group(instance, +1)
+                elif key == ord("+"):  # zoom in (smaller step)
+                    toggle_orderbook_group(instance, -1)
 
                 elif key == ord("S"):
-                    toggle_orderbook_sum(gox)
+                    toggle_orderbook_sum(instance)
 
                 elif key == ord("T"):
-                    toggle_depth_sum(gox)
+                    toggle_depth_sum(instance)
 
                 # lowercase keys go to the strategy module
                 elif key >= ord("a") and key <= ord("z"):
-                    gox.signal_keypress(gox, (key))
+                    instance.signal_keypress(instance, (key))
                 else:
-                    gox.debug("key pressed: key=%i" % key)
+                    instance.debug("key pressed: key=%i" % key)
 
         except KeyboardInterrupt:
             # Ctrl+C has been pressed
@@ -1661,7 +1634,7 @@ def main():
         # threads to a separate logfile because this helps debugging freezes
         # and deadlocks that might occur if things went totally wrong.
 
-        with open("goxtool.stacktrace.log", "w") as stacklog:
+        with open("pytrader.stacktrace.log", "w") as stacklog:
             stacklog.write(dump_all_stacks())
 
         # we need the signal lock to be able to shut down. And we cannot
@@ -1681,7 +1654,7 @@ def main():
             debug_tb.append(traceback.format_exc())
 
         try:
-            gox.stop()
+            instance.stop()
         except Exception:
             debug_tb.append(traceback.format_exc())
 
@@ -1698,7 +1671,6 @@ def main():
         # curses_loop() ends here, we must reach this point under all circumstances.
         # Now curses will restore the terminal back to cooked (normal) mode.
 
-
     # Here it begins. The very first thing is to always set US or GB locale
     # to have always the same well defined behavior for number formatting.
     for loc in ["en_US.UTF8", "en_GB.UTF8", "en_EN", "en_GB", "C"]:
@@ -1710,52 +1682,52 @@ def main():
 
     # before we can finally start the curses UI we might need to do some user
     # interaction on the command line, regarding the encrypted secret
-    argp = argparse.ArgumentParser(description='MtGox live market data monitor'
-        + ' and trading bot experimentation framework')
+    argp = argparse.ArgumentParser(
+        description='Live market data monitor and trading bot experimentation framework')
     argp.add_argument('--add-secret', action="store_true",
-        help="prompt for API secret, encrypt it and then exit")
+                      help="prompt for API secret, encrypt it and then exit")
     argp.add_argument('--strategy', action="store", default="strategy.py",
-        help="name of strategy module files, comma separated list, default=strategy.py")
+                      help="name of strategy module files, comma separated list, default=strategy.py")
     argp.add_argument('--protocol', action="store", default="",
-        help="force protocol (socketio, websocket or pubnub), ignore setting in .ini")
+                      help="force protocol (socketio, websocket or pubnub), ignore setting in .ini")
     argp.add_argument('--no-fulldepth', action="store_true", default=False,
-        help="do not download full depth (useful for debugging)")
+                      help="do not download full depth (useful for debugging)")
     argp.add_argument('--no-depth', action="store_true", default=False,
-        help="do not request depth messages (implies no-fulldeph), useful for low traffic")
+                      help="do not request depth messages (implies no-fulldeph), useful for low traffic")
     argp.add_argument('--no-lag', action="store_true", default=False,
-        help="do not request order-lag updates, useful for low traffic")
+                      help="do not request order-lag updates, useful for low traffic")
     argp.add_argument('--no-history', action="store_true", default=False,
-        help="do not download full history (useful for debugging)")
+                      help="do not download full history (useful for debugging)")
     argp.add_argument('--use-http', action="store_true", default=False,
-        help="use http api for trading (more reliable, recommended")
+                      help="use http api for trading (more reliable, recommended")
     argp.add_argument('--no-http', action="store_true", default=False,
-        help="use streaming api for trading (problematic when streaming api disconnects often)")
+                      help="use streaming api for trading (problematic when streaming api disconnects often)")
     argp.add_argument('--password', action="store", default=None,
-        help="password for decryption of stored key. This is a dangerous option "
-            +"because the password might end up being stored in the history file "
-            +"of your shell, for example in ~/.bash_history. Use this only when "
-            +"starting it from within a script and then of course you need to "
-            +"keep this start script in a secure place!")
+                      help="password for decryption of stored key. This is a dangerous option "
+                      + "because the password might end up being stored in the history file "
+                      + "of your shell, for example in ~/.bash_history. Use this only when "
+                      + "starting it from within a script and then of course you need to "
+                      + "keep this start script in a secure place!")
     args = argp.parse_args()
 
-    config = goxapi.GoxConfig("goxtool.ini")
+    config = api.ApiConfig("pytrader.ini")
     config.init_defaults(INI_DEFAULTS)
-    secret = goxapi.Secret(config)
+    secret = api.Secret(config)
     secret.password_from_commandline_option = args.password
     if args.add_secret:
         # prompt for secret, encrypt, write to .ini and then exit the program
         secret.prompt_encrypt()
     else:
         strat_mod_list = args.strategy.split(",")
-        goxapi.FORCE_PROTOCOL = args.protocol
-        goxapi.FORCE_NO_FULLDEPTH = args.no_fulldepth
-        goxapi.FORCE_NO_DEPTH = args.no_depth
-        goxapi.FORCE_NO_LAG = args.no_lag
-        goxapi.FORCE_NO_HISTORY = args.no_history
-        goxapi.FORCE_HTTP_API = args.use_http
-        goxapi.FORCE_NO_HTTP_API = args.no_http
-        if goxapi.FORCE_NO_DEPTH:
-            goxapi.FORCE_NO_FULLDEPTH = True
+        api.FORCE_PROTOCOL = args.protocol
+        api.FORCE_NO_FULLDEPTH = args.no_fulldepth
+        api.FORCE_NO_DEPTH = args.no_depth
+        api.FORCE_NO_LAG = args.no_lag
+        api.FORCE_NO_HISTORY = args.no_history
+        api.FORCE_HTTP_API = args.use_http
+        api.FORCE_NO_HTTP_API = args.no_http
+        if api.FORCE_NO_DEPTH:
+            api.FORCE_NO_FULLDEPTH = True
 
         # if its ok then we can finally enter the curses main loop
         if secret.prompt_decrypt() != secret.S_FAIL_FATAL:
@@ -1770,11 +1742,10 @@ def main():
             else:
                 print
                 print "**************************************************************"
-                print "*  Please donate! :)                                         *"
+                print "*  Please donate!                                            *"
+                print "*    caktux (pytrader):  18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha  *"
                 print "*    prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW  *"
-                print "*    caktux (mods):      18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha  *"
                 print "**************************************************************"
 
 if __name__ == "__main__":
     main()
-

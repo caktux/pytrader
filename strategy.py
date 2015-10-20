@@ -2,26 +2,24 @@
 trading robot breadboard
 """
 
-import goxapi
+import api
 
-class Strategy(goxapi.BaseObject):
-    # pylint: disable=C0111,W0613,R0201
+class Strategy(api.BaseObject):
 
-    def __init__(self, gox):
-        goxapi.BaseObject.__init__(self)
-        self.signal_debug.connect(gox.signal_debug)
-        gox.signal_keypress.connect(self.slot_keypress)
-        gox.signal_strategy_unload.connect(self.slot_before_unload)
-        gox.signal_ticker.connect(self.slot_tick)
-        gox.signal_depth.connect(self.slot_depth)
-        gox.signal_trade.connect(self.slot_trade)
-        gox.signal_userorder.connect(self.slot_userorder)
-        gox.orderbook.signal_owns_changed.connect(self.slot_owns_changed)
-        gox.history.signal_changed.connect(self.slot_history_changed)
-        gox.signal_wallet.connect(self.slot_wallet_changed)
-        self.gox = gox
-        self.name = "%s.%s" % \
-            (self.__class__.__module__, self.__class__.__name__)
+    def __init__(self, instance):
+        api.BaseObject.__init__(self)
+        self.signal_debug.connect(instance.signal_debug)
+        instance.signal_keypress.connect(self.slot_keypress)
+        instance.signal_strategy_unload.connect(self.slot_before_unload)
+        instance.signal_ticker.connect(self.slot_tick)
+        instance.signal_depth.connect(self.slot_depth)
+        instance.signal_trade.connect(self.slot_trade)
+        instance.signal_userorder.connect(self.slot_userorder)
+        instance.orderbook.signal_owns_changed.connect(self.slot_owns_changed)
+        instance.history.signal_changed.connect(self.slot_history_changed)
+        instance.signal_wallet.connect(self.slot_wallet_changed)
+        self.instance = instance
+        self.name = "%s.%s" % (self.__class__.__module__, self.__class__.__name__)
         self.debug("%s loaded" % self.name)
 
     def __del__(self):
@@ -54,7 +52,7 @@ class Strategy(goxapi.BaseObject):
         """a depth message has been received. Use this only if you want to
         keep track of the depth and orderbook updates yourself or if you
         for example want to log all depth messages to a database. This
-        signal comes directly from the streaming API and the gox.orderbook
+        signal comes directly from the streaming API and the instance.orderbook
         might not yet be updated at this time."""
         pass
 
@@ -73,20 +71,20 @@ class Strategy(goxapi.BaseObject):
     def slot_owns_changed(self, orderbook, _dummy):
         """this comes *after* userorder and orderbook.owns is updated already.
         Also note that this signal is sent by the orderbook object, not by gox,
-        so the sender argument is orderbook and not gox. This signal might be
+        so the sender argument is orderbook and not instance. This signal might be
         useful if you want to detect whether an order has been filled, you
         count open orders, count pending orders and compare with last count"""
         pass
 
     def slot_wallet_changed(self, gox, _dummy):
         """this comes after the wallet has been updated. Access the new balances
-        like so: gox.wallet[gox.curr_base] or gox.wallet[gox.curr_quote] and use
-        gox.base2float() or gox.quote2float() if you need float values. You can
-        also access balances from other currenies like gox.wallet["JPY"] but it
+        like so: instance.wallet[instance.curr_base] or instance.wallet[instance.curr_quote] and use
+        instance.base2float() or instance.quote2float() if you need float values. You can
+        also access balances from other currenies like instance.wallet["JPY"] but it
         is not guaranteed that they exist if you never had a balance in that
         particular currency. Always test for their existence first. Note that
         there will be multiple wallet signals after every trade. You can look
-        into gox.msg to inspect the original server message that triggered this
+        into instance.msg to inspect the original server message that triggered this
         signal to filter the flood a little bit."""
         pass
 
