@@ -560,14 +560,14 @@ class History(BaseObject):
             return int(date / self.timeframe) * self.timeframe
 
         # remove existing recent candle(s) if any, we will create them fresh
-        date_begin = get_time_round(int(history[0]["date"]))
+        date_begin = get_time_round(history[0]["date"])
         while len(self.candles) and self.candles[0].tim >= date_begin:
             self.candles.pop(0)
 
         new_candle = OHLCV(0, 0, 0, 0, 0, 0)  # this is a dummy, not actually inserted
         count_added = 0
         for trade in history:
-            date = int(trade["date"])
+            date = trade["date"]
             price = trade["price"]
             volume = trade["amount"]
             time_round = get_time_round(date)
@@ -575,8 +575,7 @@ class History(BaseObject):
                 if new_candle.tim > 0:
                     self._add_candle(new_candle)
                     count_added += 1
-                new_candle = OHLCV(
-                    time_round, price, price, price, price, volume)
+                new_candle = OHLCV(time_round, price, price, price, price, volume)
             new_candle.update(price, volume)
 
         # insert current (incomplete) candle
@@ -785,8 +784,7 @@ class Api(BaseObject):
         need_no_history = not self.config.get_bool("api", "load_history")
         need_no_depth = need_no_depth or FORCE_NO_FULLDEPTH
         need_no_history = need_no_history or FORCE_NO_HISTORY
-        ready_account = \
-            self.ready_idkey and self.ready_info and self.orderbook.ready_owns
+        ready_account = self.ready_idkey and self.ready_info and self.orderbook.ready_owns
         if ready_account or need_no_account:
             if self.orderbook.ready_depth or need_no_depth:
                 if self.history.ready_history or need_no_history:
@@ -886,7 +884,7 @@ class Api(BaseObject):
 
         elif reqid == "orders":
             # self.debug("### got own order list")
-            self.count_submitted = 0
+            # self.count_submitted = 0
             self.orderbook.init_own(result)
             # self.debug("### have %d own orders for %s/%s" % (len(self.orderbook.owns), self.curr_base, self.curr_quote))
 
@@ -906,6 +904,7 @@ class Api(BaseObject):
 
             self.signal_wallet(self, None)
             self.ready_info = True
+            self.client._info_ready = True
             self.check_connect_ready()
 
         # elif reqid == "ticker":
@@ -990,7 +989,7 @@ class Api(BaseObject):
         timestamp = int(msg["now"])
         total_volume = msg["total_volume"]
 
-        delay = time.time() * 1e6 - timestamp
+        delay = time.time() - timestamp
 
         self.debug("depth: %s: %s @ %s total: %s vol: %s (age: %0.2f s)" % (
             typ,

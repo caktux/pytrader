@@ -18,7 +18,7 @@ conf.setdefault('balancer_distance', 5)
 conf.setdefault('balancer_distance_sell', 5)
 conf.setdefault('balancer_quote_cold', 0)
 conf.setdefault('balancer_coin_cold', 0)
-conf.setdefault('balancer_marker', 7)
+conf.setdefault('balancer_marker', 9)
 conf.setdefault('balancer_compensate_fees', True)
 conf.setdefault('balancer_target_margin', 1)
 
@@ -41,11 +41,11 @@ BASE = 1E8  # number of satoshi per coin, this is a constant.
 
 def add_marker(price, marker):
     """encode a marker in the price value to find bot's own orders"""
-    return ((math.floor(price * 1e7) / 1e7) * 1e8 + marker) / 1e8
+    return ((math.floor(price * 1e5) / 1e5) * 1e6 + marker) / 1e6
 
 def has_marker(price, marker):
     """return true if the price value has the marker"""
-    return ((price * 1e8) % 10) == marker
+    return ((price * 1e6) % 10) == marker
 
 def mark_own(price):
     """return the price with our own marker embedded"""
@@ -83,8 +83,8 @@ class Strategy(strategy.Strategy):
             self.wallet = True
             self.simulate = {'next_sell': 0, 'sell_amount': 0, 'next_buy': 0, 'buy_amount': 0}
             self.instance.wallet = {}
-            self.instance.wallet[self.instance.curr_quote] = 0.0054834  # 28
-            self.instance.wallet[self.instance.curr_base] = 2.886  # 15000
+            self.instance.wallet[self.instance.curr_quote] = 28
+            self.instance.wallet[self.instance.curr_base] = 15000
             self.instance.trade_fee = 0.1
 
     def __del__(self):
@@ -138,26 +138,20 @@ class Strategy(strategy.Strategy):
 
             self.debug("[s]%s difference at current price:" % self.base, vol_buy)
             self.debug("[s]Next two orders would be at:")
-            self.debug(
-                "[s]  ask:",
+            self.debug("[s]  ask: %.4f %s @ %.6f = %.6f %s" % (
                 sell_amount,
                 api.curr_base,
-                "@",
                 price_sell,
                 price_sell * sell_amount,
-                api.curr_quote)
-            self.debug(
-                "[s]  bid:",
+                api.curr_quote))
+            self.debug("[s]  bid: %.4f %s @ %.6f = %.6f %s" % (
                 buy_amount,
                 api.curr_base,
-                "@",
                 price_buy,
                 price_buy * buy_amount,
-                api.curr_quote)
+                api.curr_quote))
 
-            vol = api.monthly_volume
-            fee = api.trade_fee
-            self.debug("[s]Monthly volume: %g %s / trade fee: %g%%" % (vol, self.base, fee))
+            self.debug("[s]Monthly volume: %g %s / trade fee: %g%%" % (api.monthly_volume, api.currency, api.trade_fee))
 
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.instance.orderbook.owns))
@@ -199,29 +193,32 @@ class Strategy(strategy.Strategy):
             # manually rebalance with market order at current price
             price = (api.orderbook.bid + api.orderbook.ask) / 2
             vol_buy = self.get_buy_at_price(price)
-            if vol_buy > 0.01:
-                self.temp_halt = True
-                self.cancel_orders()
-                if vol_buy > 0:
-                    self.debug("[s]%sbuying %.8f at market price of %.8f" % (
-                        self.simulate_or_live,
-                        vol_buy,
-                        price))
-                    if not SIMULATE:
-                        api.buy(0, vol_buy)
-                else:
-                    self.debug("[s]%sselling %.8f at market price of %.8f" % (
-                        self.simulate_or_live,
-                        -vol_buy,
-                        price))
-                    if not SIMULATE:
-                        api.sell(0, -vol_buy)
+            self.temp_halt = True
+            self.cancel_orders()
+            if vol_buy > 0:
+                price = api.orderbook.ask
+                vol_buy = self.get_buy_at_price(price)
+                self.debug("[s]%sbuying %.8f at market price of %.6f" % (
+                    self.simulate_or_live,
+                    vol_buy,
+                    price))
+                if not SIMULATE:
+                    api.buy(0, vol_buy)
+            else:
+                price = api.orderbook.bid
+                vol_buy = self.get_buy_at_price(price)
+                self.debug("[s]%sselling %.8f at market price of %.6f" % (
+                    self.simulate_or_live,
+                    -vol_buy,
+                    price))
+                if not SIMULATE:
+                    api.sell(0, -vol_buy)
 
     def help(self):
         self.debug("[s]Press 'h' to see this help")
         self.debug("[s]Press 'i' for information")
         self.debug("[s]Press 'o' to see order book")
-        self.debug("[s]WARNING Rebalancing will buy or sell up to half your quote or %s balance" % self.base)
+        self.debug("[s]WARNING Rebalancing will buy or sell up to half your %s or %s balance" % (self.quote, self.base))
         self.debug("[s]Press 'r' to rebalance with market order at current price (recommended before rebalancing)")
         self.debug("[s]Press 'p' to add initial rebalancing orders and start trading")
         self.debug("[s]Press 'c' to cancel all rebalancing orders and suspend trading")
@@ -232,8 +229,9 @@ class Strategy(strategy.Strategy):
         them through the marker in the price value"""
         must_cancel = []
         for order in self.instance.orderbook.owns:
-            if is_own(order.price):
-                must_cancel.append(order)
+            # self.debug("[s]is_own: %.6f, oid: %s, price: %.6f" % ((order.price * 1e6) % 10, order.oid, order.price))
+            # if is_own(order.price):
+            must_cancel.append(order)
 
         for order in must_cancel:
             if not SIMULATE:
@@ -301,9 +299,11 @@ class Strategy(strategy.Strategy):
 
             # Apply target margin to corrected sell price
             if target_margin:
-                next_sell = mark_own(math.ceil(self.ask * (1 + target_margin / 100) * 1e8) / 1e8)
+                # next_sell = mark_own(math.ceil(self.ask * (1 + target_margin / 100) * 1e8) / 1e8)
+                next_sell = math.ceil(self.ask * (1 + target_margin / 100) * 1e8) / 1e8
             else:
-                next_sell = mark_own(self.ask)
+                # next_sell = mark_own(self.ask)
+                next_sell = self.ask
 
             self.debug("[s]corrected next sell at %.8f instead of %.8f, ask price at %.8f" %
                        (next_sell, bad_next_sell, self.ask))
@@ -318,9 +318,11 @@ class Strategy(strategy.Strategy):
 
             # Apply target margin to corrected buy price
             if target_margin:
-                next_buy = mark_own(math.ceil(self.bid * 2 - (self.bid * (1 + target_margin / 100)) * 1e8) / 1e8)
+                # next_buy = mark_own(math.ceil(self.bid * 2 - (self.bid * (1 + target_margin / 100)) * 1e8) / 1e8)
+                next_buy = math.ceil(self.bid * 2 - (self.bid * (1 + target_margin / 100)) * 1e8) / 1e8
             else:
-                next_buy = mark_own(self.bid)
+                # next_buy = mark_own(self.bid)
+                next_buy = self.bid
 
             self.debug("[s]corrected next buy at %.8f instead of %.8f, bid price at %.8f" % (next_buy, bad_next_buy, self.bid))
         elif self.bid == 0:
@@ -385,22 +387,25 @@ class Strategy(strategy.Strategy):
 
     def slot_trade(self, api, (date, price, volume, typ, own)):
         """a trade message has been received"""
+        self.debug("[s]slot_trade triggered")
+
         # not interested in other people's trades
         if not own:
             return
 
         # not interested in manually entered (not bot) trades
-        if not is_own(price):
-            return
+        # if not is_own(price):
+        #     return
 
         text = {"bid": "sold", "ask": "bought"}[typ]
 
-        self.debug("[s]*** %s%s %.8f at %.8f" % (
-            'SIMULATION - ' if SIMULATE else '',
-            text,
-            volume,
-            price
-        ))
+        if price and volume:
+            self.debug("[s]*** %s%s %.8f at %.8f" % (
+                'SIMULATION - ' if SIMULATE else '',
+                text,
+                volume,
+                price
+            ))
 
         # write some account information to a separate log file
         if len(api.wallet):
@@ -440,6 +445,7 @@ class Strategy(strategy.Strategy):
 
     def slot_owns_changed(self, orderbook, _dummy):
         """status or amount of own open orders has changed"""
+        # self.debug("[s]slot_owns_changed triggered")
 
         # Fix leftover satoshi
         for order in orderbook.owns:
@@ -470,13 +476,12 @@ class Strategy(strategy.Strategy):
         # we count the open and pending orders
         count = 0
         count_pending = 0
-        book = self.instance.orderbook
-        for order in book.owns:
-            if is_own(order.price):
-                if order.status == "open":
-                    count += 1
-                else:
-                    count_pending += 1
+        for order in self.instance.orderbook.owns:
+            # if is_own(order.price):
+            if order.status == "open":
+                count += 1
+            else:
+                count_pending += 1
 
         # as long as there are ANY pending orders around we
         # just do nothing and wait for the next signal
@@ -487,6 +492,12 @@ class Strategy(strategy.Strategy):
         # now we cancel the other one and place two fresh orders in the
         # distance of DISTANCE around center price.
         if count == 1:
+            # wait for polled balances
+            if not self.instance.client._info_ready:
+                self.debug("[s]Waiting for balances...")
+                return
+            self.debug("[s]Got balances...")
+
             self.cancel_orders()
             self.place_orders()
 
@@ -533,7 +544,8 @@ class Strategy(strategy.Strategy):
                 # Decrease our next buy price
                 price = self.price_with_fees(price)
 
-        return mark_own(price)
+        # return mark_own(price)
+        return price
 
     def get_next_sell_price(self, center, step_factor):
         """get the next sell price. If there is a forced price level
@@ -547,7 +559,8 @@ class Strategy(strategy.Strategy):
                 # Increase our next sell price
                 price = self.price_with_fees(price)
 
-        return mark_own(price)
+        # return mark_own(price)
+        return price
 
     def get_forced_price(self, center, need_ask):
         """get externally forced price level for order"""
@@ -564,10 +577,12 @@ class Strategy(strategy.Strategy):
             if need_ask:
                 for price in prices:
                     if price > center * self.step_factor_sell:
-                        return mark_own(price)
+                        # return mark_own(price)
+                        return price
             else:
                 for price in reversed(prices):
                     if price < center / self.step_factor:
-                        return mark_own(price)
+                        # return mark_own(price)
+                        return price
 
         return None

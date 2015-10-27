@@ -29,13 +29,13 @@ class PollClient(BaseObject):
         self.signal_connected = Signal()
         self.signal_disconnected = Signal()
 
-        self._timer_lag = Timer(12)
+        self._timer_lag = Timer(40)
         self._timer_info = Timer(5)
-        self._timer_ticker = Timer(3)
-        self._timer_orders = Timer(5)
-        self._timer_volume = Timer(30)
-        self._timer_depth = Timer(10)
-        self._timer_history = Timer(15)
+        self._timer_depth = Timer(7)
+        self._timer_ticker = Timer(9)
+        self._timer_orders = Timer(12)
+        self._timer_volume = Timer(90)
+        self._timer_history = Timer(60)
 
         self._timer_lag.connect(self.slot_timer_lag)
         self._timer_info.connect(self.slot_timer_info)
@@ -46,6 +46,7 @@ class PollClient(BaseObject):
         self._timer_history.connect(self.slot_timer_history)
 
         self._info_timer = None  # used when delayed requesting private/info
+        self._info_ready = False
 
         self.curr_base = curr_base
         self.curr_quote = curr_quote
@@ -124,17 +125,15 @@ class PollClient(BaseObject):
 
         # Api() will have set this field to the timestamp of the last
         # known candle, so we only request data since this time
-        since = self.history_last_candle
+        # since = self.history_last_candle
+        # self.debug("[s]Last candle: %s" % self.history_last_candle)
 
         def history_thread():
             """request trading history"""
 
-            # 1308503626, 218868 <-- last small transacion ID
-            # 1309108565, 1309108565842636 <-- first big transaction ID
-
             querystring = "?pair=%s" % self.pair
-            if since:
-                querystring += "&since=%i" % (since * 1000000)
+            # if not self.history_last_candle:
+            #     querystring += "&since=%i" % (self.history_last_candle * 1e9)
 
             # self.debug("### requesting history")
             use_ssl = self.config.get_bool("api", "use_ssl")
@@ -187,11 +186,13 @@ class PollClient(BaseObject):
         """request the private/info in delay seconds from now"""
         if self._info_timer:
             self._info_timer.cancel()
+        self._info_ready = False
         self._info_timer = Timer(delay, True)
         self._info_timer.connect(self._slot_timer_info_later)
 
     def request_info(self):
         """request the private/Balance object"""
+        self._info_ready = False
         self.enqueue_http_request("private/Balance", {}, "info")
 
     def request_volume(self):
@@ -206,20 +207,15 @@ class PollClient(BaseObject):
         """send queued http requests to the http API"""
         while not self._terminating:
             # pop queued request from the queue and process it
-            (api_endpoint, params, reqid) = self.http_requests.get(True)
+            (api_endpoint, params, reqid) = self.http_requests.get(True, 5)
             translated = None
             try:
                 answer = self.http_signed_call(api_endpoint, params)
-                self.debug("Result: %s" % answer)
+                # self.debug("Result: %s" % answer)
                 if "result" in answer:
                     # the following will reformat the answer in such a way
                     # that we can pass it directly to signal_recv()
                     # as if it had come directly from the websocket
-                    # if api_endpoint == 'public/Ticker':
-                    #     result = {
-                    #         'bid': answer['result'][self.pair]['b'][0],
-                    #         'ask': answer['result'][self.pair]['a'][0]
-                    #     }
                     if api_endpoint == 'public/Time':
                         lag = time.time() - answer['result']['unixtime']
                         result = {
@@ -245,7 +241,7 @@ class PollClient(BaseObject):
                         result = {
                             'volume': float(answer['result']['volume']),
                             'currency': answer['result']['currency'],
-                            'fee': float(answer['result']['fees'][self.pair]['fee'])
+                            'fee': float(answer['result']['fees_maker'][self.pair]['fee'])
                         }
                     else:
                         result = answer["result"]
@@ -287,8 +283,7 @@ class PollClient(BaseObject):
                 # volatility it appears that this happens mostly when
                 # there is heavy load on their servers. Resubmitting
                 # the API call will then eventally succeed.
-                self.debug("### exception in _http_thread_func:",
-                           exc, api_endpoint, params, reqid)
+                self.debug("### exception in _http_thread_func:", exc, api_endpoint, params, reqid)
                 self.debug(traceback.format_exc())
 
                 # enqueue it again, it will eventually succeed.
@@ -299,11 +294,13 @@ class PollClient(BaseObject):
 
             self.http_requests.task_done()
 
+        self.debug("[s]Polling terminated...")
+
     def enqueue_http_request(self, api_endpoint, params, reqid):
         """enqueue a request for sending to the HTTP API, returns
         immediately, behaves exactly like sending it over the websocket."""
         if self.secret and self.secret.know_secret():
-            self.http_requests.put((api_endpoint, params, reqid))
+            self.http_requests.put((api_endpoint, params, reqid), True, 5)
 
     def http_signed_call(self, api_endpoint, params):
         """send a signed request to the HTTP API V2"""
@@ -340,6 +337,7 @@ class PollClient(BaseObject):
     def send_order_add(self, typ, price, volume):
         """send an order"""
         reqid = "order_add:%s:%f:%f" % (typ, price, volume)
+        self.debug("Sending %s" % reqid)
         typ = "sell" if typ == "ask" else "buy"
         if price > 0:
             params = {
@@ -364,6 +362,7 @@ class PollClient(BaseObject):
         """cancel an order"""
         params = {"txid": txid}
         reqid = "order_cancel:%s" % txid
+        self.debug("Sending %s" % reqid)
         api = "private/CancelOrder"
         self.enqueue_http_request(api, params, reqid)
 

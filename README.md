@@ -181,4 +181,5 @@ Of course you could have also have followed my previous advise to not do anythin
 ##### Donations appreciated
 
 caktux (pytrader): 18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha
+
 prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW

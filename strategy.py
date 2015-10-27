@@ -37,18 +37,18 @@ class Strategy(api.BaseObject):
         symptom would be that you don't see the 'unloaded' message above."""
         pass
 
-    def slot_keypress(self, gox, (key)):
+    def slot_keypress(self, instance, (key)):
         """a key in has been pressed (only a..z without "q" and "l")
         The argument key contains the ascii code. To react to a certain
         key use something like if key == ord('a')
         """
         pass
 
-    def slot_tick(self, gox, (bid, ask)):
+    def slot_tick(self, instance, (bid, ask)):
         """a tick message has been received from the streaming API"""
         pass
 
-    def slot_depth(self, gox, (typ, price, volume, total_volume)):
+    def slot_depth(self, instance, (typ, price, volume, total_volume)):
         """a depth message has been received. Use this only if you want to
         keep track of the depth and orderbook updates yourself or if you
         for example want to log all depth messages to a database. This
@@ -56,27 +56,27 @@ class Strategy(api.BaseObject):
         might not yet be updated at this time."""
         pass
 
-    def slot_trade(self, gox, (date, price, volume, typ, own)):
+    def slot_trade(self, instance, (date, price, volume, typ, own)):
         """a trade message has been received. Note that this signal comes
         directly from the streaming API, it might come before orderbook.owns
         list has been updated, don't rely on the own orders and wallet already
         having been updated when this is fired."""
         pass
 
-    def slot_userorder(self, gox, (price, volume, typ, oid, status)):
+    def slot_userorder(self, instance, (price, volume, typ, oid, status)):
         """this comes directly from the API and owns list might not yet be
         updated, if you need the new owns list then use slot_owns_changed"""
         pass
 
     def slot_owns_changed(self, orderbook, _dummy):
         """this comes *after* userorder and orderbook.owns is updated already.
-        Also note that this signal is sent by the orderbook object, not by gox,
+        Also note that this signal is sent by the orderbook object, not by api,
         so the sender argument is orderbook and not instance. This signal might be
         useful if you want to detect whether an order has been filled, you
         count open orders, count pending orders and compare with last count"""
         pass
 
-    def slot_wallet_changed(self, gox, _dummy):
+    def slot_wallet_changed(self, instance, _dummy):
         """this comes after the wallet has been updated. Access the new balances
         like so: instance.wallet[instance.curr_base] or instance.wallet[instance.curr_quote] and use
         instance.base2float() or instance.quote2float() if you need float values. You can

@@ -705,7 +705,7 @@ class WinChart(Win):
     def paint_depth_chart(self):
         """paint a depth chart"""
 
-        BAR_LEFT_EDGE = 11
+        BAR_LEFT_EDGE = 14
         FORMAT_STRING = "%7.8f"
 
         def paint_depth(pos, price, vol, own, col_price, change):
@@ -1020,7 +1020,7 @@ class WinStatus(Win):
             str_btc = locale.format('%d', self.instance.orderbook.total_ask, 1)
             str_fiat = locale.format('%d', self.instance.orderbook.total_bid, 1)
             if self.instance.orderbook.total_ask:
-                ratio = (self.instance.orderbook.total_bid / self.instance.orderbook.total_ask) * self.instance.orderbook.ask
+                ratio = (self.instance.orderbook.total_bid / self.instance.orderbook.ask) / self.instance.orderbook.total_ask
                 str_ratio = locale.format('%1.5f', ratio, 1)
             else:
                 str_ratio = "-"
@@ -1684,10 +1684,13 @@ def main():
     # interaction on the command line, regarding the encrypted secret
     argp = argparse.ArgumentParser(
         description='Live market data monitor and trading bot experimentation framework')
+    argp.add_argument('--config',
+                      default="pytrader.ini",
+                      help="Use different config file (default: %(default)s)")
     argp.add_argument('--add-secret', action="store_true",
                       help="prompt for API secret, encrypt it and then exit")
     argp.add_argument('--strategy', action="store", default="strategy.py",
-                      help="name of strategy module files, comma separated list, default=strategy.py")
+                      help="name of strategy module files, comma separated list (default: %(default)s)")
     argp.add_argument('--protocol', action="store", default="",
                       help="force protocol (socketio, websocket or pubnub), ignore setting in .ini")
     argp.add_argument('--no-fulldepth', action="store_true", default=False,
@@ -1710,7 +1713,7 @@ def main():
                       + "keep this start script in a secure place!")
     args = argp.parse_args()
 
-    config = api.ApiConfig("pytrader.ini")
+    config = api.ApiConfig(args.config)
     config.init_defaults(INI_DEFAULTS)
     secret = api.Secret(config)
     secret.password_from_commandline_option = args.password
