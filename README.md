@@ -1,5 +1,3 @@
-#### Hosted version available at [https://zerogox.com](https://zerogox.com)
-
 # PyTrader
 
 PyTrader is a Python trading client and auto-trading bot for the crypto-currency exchanges. It is designed to work in the Linux console and has a curses user interface. It can display live streaming market data and you can buy and sell with keyboard commands.
@@ -96,7 +94,7 @@ All dialogs can be closed with `F10` or `ESC`.
 Running all strategies:
 
 ```
-./pytrader.py --strategy=balancer.py,buy.py,sell.py
+./pytrader.py --strategy=balancer,buy,sell
 ```
 
 
@@ -113,7 +111,7 @@ Portfolio rebalancing bot that will buy and sell to maintain a constant asset al
 - <kbd>s</kbd> to switch between Live and Simulation modes
 
 ```
-./pytrader.py --strategy=balancer.py
+./pytrader.py --strategy=balancer
 ```
 
 #### Buy strategy
@@ -123,7 +121,7 @@ Buy strategy module. Set `buy_level` at the price you want to buy, `threshold` a
 * <kbd>b</kbd> to see Buy objective
 
 ```
-./pytrader.py --strategy=buy.py
+./pytrader.py --strategy=buy
 ```
 
 #### Sell strategy
@@ -133,7 +131,7 @@ Sell strategy module. Set `sell_level` at the price you want to sell, `threshold
 - <kbd>s</kbd> to see Sell objective
 
 ```
-./pytrader.py --strategy=sell.py
+./pytrader.py --strategy=sell
 ```
 
 #### Making your own
@@ -143,7 +141,7 @@ You can write your own trading bots. There is a file named `strategy.py`, it con
 If you decide to make serious use of this then please create a new python file for your strategy. either make a copy of the default strategy.py skeleton or make a module that imports strategy and has a class Strategy(strategy.Strategy), give this module file a different name and leave strategy.py alone so it won't collide with upstream changes you pull from github. By default pytrader will load strategy.py but you can start it with the --strategy command line option to specify your own strategy module or a comma separated list of many modules:
 
 ```
-./pytrader --strategy=mystrategy.py,otherstrategy.py
+./pytrader --strategy=mystrategy,otherstrategy
 ```
 
 You can even edit the strategy while pytrader is running and then reload it at runtime (this can be very useful), just press the l key (lowercase L) and it will do the following things:
