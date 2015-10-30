@@ -8,8 +8,8 @@ PyTrader also has a simple interface to plug in your own automated trading strat
 
 ## Supported exchanges
 - Kraken
+- Poloniex (Ticker, Depth and History - Trading still needs testing)
 - Bitstamp (TODO)
-- Poloniex (TODO)
 
 ## Installation
 
@@ -110,6 +110,7 @@ Portfolio rebalancing bot that will buy and sell to maintain a constant asset al
 - <kbd>p</kbd> to add initial rebalancing orders
 - <kbd>c</kbd> to cancel all rebalancing orders
 - <kbd>u</kbd> to update account information, order list and wallet
+- <kbd>s</kbd> to switch between Live and Simulation modes
 
 ```
 ./pytrader.py --strategy=balancer.py
@@ -148,15 +149,15 @@ If you decide to make serious use of this then please create a new python file f
 You can even edit the strategy while pytrader is running and then reload it at runtime (this can be very useful), just press the l key (lowercase L) and it will do the following things:
 
 * emit signal _strategy_unload, this will call slot_before_unload()
-* free the currently running instance of Strategy() (your __del__() method should be called)
+* free the currently running instance of Strategy() (your `__del__()` method should be called)
 * re-import the changed module file
-* create a new instance of Strategy() and call your__init__() again.
+* create a new instance of Strategy() and call your `__init__()` again.
 
-You should persist the state of your bot (if needed) in slot_before_unload() and reload it in __init__(). Leave the __del__() method alone, its only there to print a log message to debug proper unloading!
+You should persist the state of your bot (if needed) in slot_before_unload() and reload it in `__init__()`. Leave the `__del__()` method alone, its only there to print a log message to debug proper unloading!
 
-Please make sure that you can see the debug output from the __del__() method in the log when the strategy is reloading, you must be sure its able to free and garbage collect your strategy! If you instantiate any circular references, even something as innocent as a double linked list or even just an object holding a reference to the strategy then this will effectively keep python from being able to garbage-collect it and hold it in memory indefinitely (and keep sending it signals!).
+Please make sure that you can see the debug output from the `__del__()` method in the log when the strategy is reloading, you must be sure its able to free and garbage collect your strategy! If you instantiate any circular references, even something as innocent as a double linked list or even just an object holding a reference to the strategy then this will effectively keep python from being able to garbage-collect it and hold it in memory indefinitely (and keep sending it signals!).
 
-Use the slot_before_unload() method to del everything in your strategy that might hold any circular references. You can check that it works if you see the debug output  of __del__() in the log scrolling by when you press l to reload it, the fact that __del__() was called is proof that it was properly garbage-collected.
+Use the slot_before_unload() method to del everything in your strategy that might hold any circular references. You can check that it works if you see the debug output  of `__del__()` in the log scrolling by when you press l to reload it, the fact that `__del__()` was called is proof that it was properly garbage-collected.
 
 Trading functions do NOT block, this means they also won't return the order ID, you need to find your own way of remembering which orders you have sent already. A few moments (seconds or minutes) after you have sent them they will be acked by the exchange and it will fire orderbook.signal_changed()and when this happens you will find it in the api.orderbook.owns list and it will have an official order ID. I know this is not optimal (because this part of the code is not yet complete, eventually there will be dedicated signals to notify your bot about the results of trading commands) and also this document is not yet a complete documentation. If you really want to dive into this: use the source, Luke.
 How to keep it up to date

@@ -48,7 +48,7 @@ class Strategy(api.BaseObject):
         """a tick message has been received from the streaming API"""
         pass
 
-    def slot_depth(self, instance, (typ, price, volume, total_volume)):
+    def slot_depth(self, instance, (typ, price, volume)):
         """a depth message has been received. Use this only if you want to
         keep track of the depth and orderbook updates yourself or if you
         for example want to log all depth messages to a database. This

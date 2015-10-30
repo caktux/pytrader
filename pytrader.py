@@ -1267,7 +1267,6 @@ class TextBox():
         position. This is only a cosmetic problem but very annnoying. Try to
         force it into the edit field by repainting it very often."""
         while self.editing:
-            # pylint: disable=W0212
             with api.Signal._lock:
                 curses.curs_set(2)
                 self.win.touchwin()
@@ -1405,7 +1404,7 @@ class LogWriter():
         else:
             logfilemode = 'w'
 
-        logging.basicConfig(filename='pytrader.log',
+        logging.basicConfig(filename='%s.log' % self.instance.config.filename[:-4],
                             filemode=logfilemode,
                             format='%(asctime)s:%(levelname)s:%(message)s',
                             level=logging.DEBUG)
@@ -1634,7 +1633,7 @@ def main():
         # threads to a separate logfile because this helps debugging freezes
         # and deadlocks that might occur if things went totally wrong.
 
-        with open("pytrader.stacktrace.log", "w") as stacklog:
+        with open("%s.stacktrace.log" % config.filename[:-4], "w") as stacklog:
             stacklog.write(dump_all_stacks())
 
         # we need the signal lock to be able to shut down. And we cannot
@@ -1715,6 +1714,7 @@ def main():
 
     config = api.ApiConfig(args.config)
     config.init_defaults(INI_DEFAULTS)
+    config.filename = args.config
     secret = api.Secret(config)
     secret.password_from_commandline_option = args.password
     if args.add_secret:

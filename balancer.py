@@ -9,36 +9,56 @@ import time
 import strategy
 import simplejson as json
 
-# Load user.conf
-conf = json.load(open("user.conf"))
+# Load balancer.conf
+conf = {}
+try:
+    conf = json.load(open("balancer.conf"))
+except:
+    print "File balancer.conf not found, saving default config file."
 
 # Set defaults
-conf.setdefault('balancer_simulate', True)
-conf.setdefault('balancer_distance', 5)
-conf.setdefault('balancer_distance_sell', 5)
-conf.setdefault('balancer_quote_cold', 0)
-conf.setdefault('balancer_coin_cold', 0)
-conf.setdefault('balancer_marker', 9)
-conf.setdefault('balancer_compensate_fees', True)
-conf.setdefault('balancer_target_margin', 1)
-
-# Simulate
-SIMULATE = int(conf['balancer_simulate'])
+conf.setdefault('simulate', True)
+conf.setdefault('distance', 5)
+conf.setdefault('distance_sell', 5)
+conf.setdefault('quote_cold', 0)
+conf.setdefault('base_cold', 0)
+conf.setdefault('quote_limit', 0)
+conf.setdefault('base_limit', 0)
+conf.setdefault('marker', 9)
+conf.setdefault('compensate_fees', True)
+conf.setdefault('correction_margin', 1)
+conf.setdefault('simulate_quote', 15)
+conf.setdefault('simulate_base', 5000)
+conf.setdefault('simulate_fee', 0.05)
+with open('balancer.conf', 'w') as configfile:
+    json.dump(conf, configfile, indent=2)
 
 # Compensate fees
-COMPENSATE_FEES = int(conf['balancer_compensate_fees'])
+COMPENSATE_FEES = bool(conf['compensate_fees'])
 
-# Live or simulation notice
-SIMULATE_OR_LIVE = 'SIMULATION - ' if SIMULATE else 'LIVE - '
-
-DISTANCE = float(conf['balancer_distance'])  # percent price distance of next rebalancing orders
-DISTANCE_SELL = float(conf['balancer_distance_sell'])  # percent price distance of next rebalancing orders
-QUOTE_COLD = float(conf['balancer_quote_cold'])  # Amount of Quote stored at home but included in calculations
-BASE_COLD = float(conf['balancer_coin_cold'])  # Amount of Coin stored at home but included in calculations
-
-MARKER = int(conf['balancer_marker'])  # lowest digit of price to identify bot's own orders
+DISTANCE = float(conf['distance'])  # percent price distance of next rebalancing orders
+DISTANCE_SELL = float(conf['distance_sell'])  # percent price distance of next rebalancing orders
+QUOTE_COLD = float(conf['quote_cold'])  # Amount of Quote stored at home but included in calculations
+BASE_COLD = float(conf['base_cold'])  # Amount of Coin stored at home but included in calculations
+QUOTE_LIMIT = float(conf['quote_limit'])  # Minimum amount to keep
+BASE_LIMIT = float(conf['base_limit'])  # Minimum amount to keep
+SIMULATE_QUOTE = float(conf['simulate_quote'])  # Quote balance to simulate
+SIMULATE_BASE = float(conf['simulate_base'])  # Base balance to simulate
+SIMULATE_FEE = float(conf['simulate_fee'])  # Fee to simulate
+MARKER = int(conf['marker'])  # lowest digit of price to identify bot's own orders
 BASE = 1E8  # number of satoshi per coin, this is a constant.
 
+ALERT = False
+try:
+    from pygame import mixer
+    mixer.init()
+    buy_alert = mixer.Sound('./sounds/bought.wav')
+    sell_alert = mixer.Sound('./sounds/sold.wav')
+    ALERT = True
+except:
+    pass
+
+# FIXME Replace those with a registry of our own orders
 def add_marker(price, marker):
     """encode a marker in the price value to find bot's own orders"""
     return ((math.floor(price * 1e5) / 1e5) * 1e6 + marker) / 1e6
@@ -55,19 +75,16 @@ def is_own(price):
     """return true if this price has our own marker"""
     return has_marker(price, MARKER)
 
-def write_log(txt):
-    """write line to a separate logfile"""
-    with open("balancer.log" if not SIMULATE else "simulation.log", "a") as logfile:
-        logfile.write(txt + "\n")
-
 
 class Strategy(strategy.Strategy):
     """a portfolio rebalancing bot"""
     def __init__(self, instance):
         strategy.Strategy.__init__(self, instance)
+        self._waiting = False
         self.bid = 0
         self.ask = 0
-        self.simulate_or_live = SIMULATE_OR_LIVE
+        self.simulate = bool(conf['simulate'])
+        self.simulate_or_live = 'SIMULATION - ' if self.simulate else 'LIVE - '
         self.base = self.instance.curr_base
         self.quote = self.instance.curr_quote
         self.wallet = False
@@ -79,27 +96,44 @@ class Strategy(strategy.Strategy):
         self.help()
 
         # Simulation wallet
-        if (SIMULATE and not self.instance.wallet) or (SIMULATE and self.wallet):
-            self.wallet = True
-            self.simulate = {'next_sell': 0, 'sell_amount': 0, 'next_buy': 0, 'buy_amount': 0}
-            self.instance.wallet = {}
-            self.instance.wallet[self.instance.curr_quote] = 28
-            self.instance.wallet[self.instance.curr_base] = 15000
-            self.instance.trade_fee = 0.1
+        if (self.simulate and not self.instance.wallet) or (self.simulate and self.wallet):
+            self.init_simulation_wallet()
 
     def __del__(self):
         try:
-            if SIMULATE and self.wallet:
+            if self.simulate and self.wallet:
                 self.instance.wallet = {}
             self.debug("[s]%s unloaded" % self.name)
         except Exception, e:
             self.debug("[s]%s exception: %s" % (self.name, e))
+
+    def write_log(self, txt):
+        """write line to a separate logfile"""
+        with open("balancer.log" if not self.simulate else "simulation.log", "a") as logfile:
+            logfile.write(txt + "\n")
+
+    def init_simulation_wallet(self):
+        self.wallet = True
+        self.simulated = {'next_sell': 0, 'sell_amount': 0, 'next_buy': 0, 'buy_amount': 0}
+        self.instance.wallet = {}
+        self.instance.wallet[self.quote] = SIMULATE_QUOTE
+        self.instance.wallet[self.base] = SIMULATE_BASE
+        self.instance.trade_fee = SIMULATE_FEE
 
     def slot_keypress(self, api, (key)):
         """a key has been pressed"""
 
         if key == ord("h"):
             self.help()
+
+        if key == ord("s"):
+            if self.simulate:
+                self.simulate = False
+            else:
+                self.simulate = True
+                self.init_simulation_wallet()
+            self.simulate_or_live = 'SIMULATION - ' if self.simulate else 'LIVE - '
+            self.debug("[s]%s" % self.simulate_or_live)
 
         if key == ord("c"):
             # cancel existing rebalancing orders and suspend trading
@@ -130,6 +164,8 @@ class Strategy(strategy.Strategy):
             vol_buy = self.get_buy_at_price(price)
 
             price_balanced = self.get_price_where_it_was_balanced()
+            if not price_balanced:
+                return
             self.debug("[s]center is %.8f" % price_balanced)
             price_sell = self.get_next_sell_price(price_balanced, self.step_factor_sell)
             price_buy = self.get_next_buy_price(price_balanced, self.step_factor)
@@ -155,39 +191,59 @@ class Strategy(strategy.Strategy):
 
         if key == ord('o'):
             self.debug("[s] %i own orders in orderbook" % len(self.instance.orderbook.owns))
-            profit_base = 0
-            profit_quote = 0
-            for order in self.instance.orderbook.owns:
-                base_diff = (order.volume - order.volume * api.trade_fee / 100) if str(order.typ) == 'bid' else order.volume
-                profit_base = base_diff if not profit_base else profit_base - base_diff
-                quote_diff = order.price * order.volume
-                profit_quote = -quote_diff if not profit_quote else profit_quote + (quote_diff if str(order.typ) == 'ask' else -quote_diff)
 
-                self.debug("[s]  %s: %s: %s @ %s %s order id: %s" % (
-                    order.status,
-                    order.typ,
-                    order.volume,
-                    order.price,
-                    order.price * order.volume,
-                    order.oid))
-            self.debug("[s]  Profit would be: %.8f %s / %.8f %s" % (
-                profit_base,
-                api.curr_base,
-                profit_quote,
-                api.curr_quote))
+            if self.instance.orderbook.owns:
+                for order in self.instance.orderbook.owns:
+                    volume = order.volume - (order.volume * api.trade_fee / 100)
+                    total = order.volume * order.price
+                    total = total - (total * api.trade_fee / 100)
+                    if order.typ == 'bid':
+                        bid_volume = volume
+                        bid_total = total
+                    if order.typ == 'ask':
+                        ask_volume = volume
+                        ask_total = total
 
-            if SIMULATE and self.wallet and self.simulate['next_sell'] and self.simulate['next_buy']:
+                    self.debug("[s]  %s: %s: %s @ %s %s order id: %s" % (
+                        order.status,
+                        order.typ,
+                        order.volume,
+                        order.price,
+                        order.price * order.volume,
+                        order.oid))
+
+                base_profit = (bid_volume - ask_volume) / 2
+                quote_profit = (ask_total - bid_total) / 2
+
+                self.debug("[s]  Profit would be: %.8f %s / %.8f %s" % (
+                    base_profit,
+                    api.curr_base,
+                    quote_profit,
+                    api.curr_quote))
+
+            if self.simulate and self.wallet and self.simulated['next_sell'] and self.simulated['next_buy']:
+                sell_total = self.simulated['next_sell'] * self.simulated['sell_amount']
+                buy_total = self.simulated['next_buy'] * self.simulated['buy_amount']
                 self.debug("[s]SIMULATION orders:")
                 self.debug("[s]  %s: %s @ %s %s" % (
                     'ask',
-                    self.simulate['sell_amount'],
-                    self.simulate['next_sell'],
-                    self.simulate['next_sell'] * self.simulate['sell_amount']))
+                    self.simulated['sell_amount'],
+                    self.simulated['next_sell'],
+                    sell_total))
                 self.debug("[s]  %s: %s @ %s %s" % (
                     'bid',
-                    self.simulate['buy_amount'],
-                    self.simulate['next_buy'],
-                    self.simulate['next_buy'] * self.simulate['buy_amount']))
+                    self.simulated['buy_amount'],
+                    self.simulated['next_buy'],
+                    buy_total))
+
+                base_profit = (self.simulated['buy_amount'] - self.simulated['sell_amount']) / 2
+                quote_profit = (sell_total - buy_total) / 2
+
+                self.debug("[s]  Profit would be: %.8f %s / %.8f %s" % (
+                    base_profit,
+                    api.curr_base,
+                    quote_profit,
+                    api.curr_quote))
 
         if key == ord("r"):
             # manually rebalance with market order at current price
@@ -202,7 +258,7 @@ class Strategy(strategy.Strategy):
                     self.simulate_or_live,
                     vol_buy,
                     price))
-                if not SIMULATE:
+                if not self.simulate:
                     api.buy(0, vol_buy)
             else:
                 price = api.orderbook.bid
@@ -211,7 +267,7 @@ class Strategy(strategy.Strategy):
                     self.simulate_or_live,
                     -vol_buy,
                     price))
-                if not SIMULATE:
+                if not self.simulate:
                     api.sell(0, -vol_buy)
 
     def help(self):
@@ -223,6 +279,7 @@ class Strategy(strategy.Strategy):
         self.debug("[s]Press 'p' to add initial rebalancing orders and start trading")
         self.debug("[s]Press 'c' to cancel all rebalancing orders and suspend trading")
         self.debug("[s]Press 'u' to update account information, order list and wallet")
+        self.debug("[s]Press 's' to switch between Live and Simulation modes")
 
     def cancel_orders(self):
         """cancel all rebalancing orders, we identify
@@ -234,7 +291,7 @@ class Strategy(strategy.Strategy):
             must_cancel.append(order)
 
         for order in must_cancel:
-            if not SIMULATE:
+            if not self.simulate:
                 self.instance.cancel(order.oid)
 
     def get_price_where_it_was_balanced(self):
@@ -261,17 +318,19 @@ class Strategy(strategy.Strategy):
         """calculate amount of BASE needed to buy at price to achieve rebalancing.
         Negative return value means we need to sell. price and return value is a
         float"""
-        quote_have = self.instance.wallet[self.instance.curr_quote] + QUOTE_COLD
-        base_value_then = self.get_base_value(price)
-        diff = quote_have - base_value_then
-        diff_base = diff / price
-        must_buy = diff_base / 2
+        if price:
+            quote_have = self.instance.wallet[self.quote] + QUOTE_COLD
+            base_value_then = self.get_base_value(price)
+            diff = quote_have - base_value_then
+            diff_base = diff / price
+            must_buy = diff_base / 2
 
-        return must_buy
+            return must_buy
+        return 0
 
     def get_base_value(self, price):
         """get total base value in quote at current price"""
-        base_have = self.instance.wallet[self.instance.curr_base] + BASE_COLD
+        base_have = self.instance.wallet[self.base] + BASE_COLD
         base_value = base_have * price
         return base_value
 
@@ -279,7 +338,7 @@ class Strategy(strategy.Strategy):
         """place two new rebalancing orders above and below center price"""
         center = self.get_price_where_it_was_balanced()
         if center:
-            self.debug("[s]center is %.8f" % center)
+            self.debug("[s][%s] center is %.8f" % (time.strftime("%H:%M:%S"), center))
         else:
             return
 
@@ -288,7 +347,7 @@ class Strategy(strategy.Strategy):
 
         status_prefix = self.simulate_or_live
 
-        target_margin = float(conf['balancer_target_margin'])
+        correction_margin = float(conf['correction_margin'])
 
         # Protect against selling below current ask price
         # self.debug("ask: %s, next_sell: %s" % (self.ask, next_sell))
@@ -298,9 +357,9 @@ class Strategy(strategy.Strategy):
             # step = int(center * self.distance / 100.0)
 
             # Apply target margin to corrected sell price
-            if target_margin:
-                # next_sell = mark_own(math.ceil(self.ask * (1 + target_margin / 100) * 1e8) / 1e8)
-                next_sell = math.ceil(self.ask * (1 + target_margin / 100) * 1e8) / 1e8
+            if correction_margin:
+                # next_sell = mark_own(math.ceil(self.ask * (1 + correction_margin / 100) * 1e8) / 1e8)
+                next_sell = self.ask * (1 + correction_margin / 100)
             else:
                 # next_sell = mark_own(self.ask)
                 next_sell = self.ask
@@ -317,9 +376,9 @@ class Strategy(strategy.Strategy):
             # step = int(center * self.distance / 100.0)
 
             # Apply target margin to corrected buy price
-            if target_margin:
-                # next_buy = mark_own(math.ceil(self.bid * 2 - (self.bid * (1 + target_margin / 100)) * 1e8) / 1e8)
-                next_buy = math.ceil(self.bid * 2 - (self.bid * (1 + target_margin / 100)) * 1e8) / 1e8
+            if correction_margin:
+                # next_buy = mark_own(math.ceil(self.bid * 2 - (self.bid * (1 + correction_margin / 100)) * 1e8) / 1e8)
+                next_buy = self.bid * 2 - (self.bid * (1 + correction_margin / 100))
             else:
                 # next_buy = mark_own(self.bid)
                 next_buy = self.bid
@@ -344,24 +403,24 @@ class Strategy(strategy.Strategy):
             buy_amount,
             next_buy,
             next_buy * buy_amount,
-            self.instance.curr_quote
+            self.quote
         ))
-        if not SIMULATE and self.ask != 0:
+        if not self.simulate and self.ask != 0:
             self.instance.buy(next_buy, buy_amount)
-        elif SIMULATE and self.wallet and self.ask != 0:
-            self.simulate.update({"next_buy": next_buy, "buy_amount": buy_amount})
+        elif self.simulate and self.wallet and self.ask != 0:
+            self.simulated.update({"next_buy": next_buy, "buy_amount": buy_amount})
 
         self.debug("[s]%snew sell order %.8f at %.8f for %.8f %s" % (
             status_prefix,
             sell_amount,
             next_sell,
             next_sell * sell_amount,
-            self.instance.curr_quote
+            self.quote
         ))
-        if not SIMULATE and self.bid != 0:
+        if not self.simulate and self.bid != 0:
             self.instance.sell(next_sell, sell_amount)
-        elif SIMULATE and self.wallet and self.bid != 0:
-            self.simulate.update({"next_sell": next_sell, "sell_amount": sell_amount})
+        elif self.simulate and self.wallet and self.bid != 0:
+            self.simulated.update({"next_sell": next_sell, "sell_amount": sell_amount})
 
     def slot_tick(self, api, (bid, ask)):
         # Set last bid/ask price
@@ -370,19 +429,19 @@ class Strategy(strategy.Strategy):
         self.ask = ask
 
         # Simulation wallet
-        if SIMULATE and self.wallet:
-            if ask >= self.simulate['next_sell']:
-                self.instance.wallet[self.instance.curr_quote] += self.simulate['sell_amount'] * self.simulate['next_sell']
-                self.instance.wallet[self.instance.curr_base] -= self.simulate['sell_amount']
+        if self.simulate and self.wallet:
+            if ask >= self.simulated['next_sell']:
+                self.instance.wallet[self.quote] += self.simulated['sell_amount'] * self.simulated['next_sell']
+                self.instance.wallet[self.base] -= self.simulated['sell_amount']
                 # Trigger slot_trade for simulation.log
-                self.slot_trade(self.instance, (time, self.simulate['next_sell'], self.simulate['sell_amount'], 'bid', True))
+                self.slot_trade(self.instance, (time, self.simulated['next_sell'], self.simulated['sell_amount'], 'bid', True))
                 self.place_orders()
 
-            if bid <= self.simulate['next_buy']:
-                self.instance.wallet[self.instance.curr_base] += self.simulate['buy_amount'] - (self.simulate['buy_amount'] * self.instance.trade_fee / 100)
-                self.instance.wallet[self.instance.curr_quote] -= self.simulate['buy_amount'] * self.simulate['next_buy']
+            if bid <= self.simulated['next_buy']:
+                self.instance.wallet[self.base] += self.simulated['buy_amount'] - (self.simulated['buy_amount'] * self.instance.trade_fee / 100)
+                self.instance.wallet[self.quote] -= self.simulated['buy_amount'] * self.simulated['next_buy']
                 # Trigger slot_trade for simulation.log
-                self.slot_trade(self.instance, (time, self.simulate['next_buy'], self.simulate['buy_amount'], 'ask', True))
+                self.slot_trade(self.instance, (time, self.simulated['next_buy'], self.simulated['buy_amount'], 'ask', True))
                 self.place_orders()
 
     def slot_trade(self, api, (date, price, volume, typ, own)):
@@ -401,7 +460,7 @@ class Strategy(strategy.Strategy):
 
         if price and volume:
             self.debug("[s]*** %s%s %.8f at %.8f" % (
-                'SIMULATION - ' if SIMULATE else '',
+                self.simulate_or_live,
                 text,
                 volume,
                 price
@@ -424,7 +483,7 @@ class Strategy(strategy.Strategy):
             base_ratio = (total_base / api.orderbook.ask) * 100
 
             datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            write_log('"%s", "%s", %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f' % (
+            self.write_log('"%s", "%s", %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f' % (
                 datetime,
                 text,
                 volume,
@@ -493,11 +552,38 @@ class Strategy(strategy.Strategy):
         # distance of DISTANCE around center price.
         if count == 1:
             # wait for polled balances
-            if not self.instance.client._info_ready:
+            if not self.instance.client._wait_for_next_info and not self._waiting:
+                self.instance.client._wait_for_next_info = True
+                self._waiting = True
+            if self.instance.client._wait_for_next_info:
                 self.debug("[s]Waiting for balances...")
                 return
-            self.debug("[s]Got balances...")
 
+            if self.instance.wallet[self.quote] <= QUOTE_LIMIT:
+                self.debug("[s]%s %s is below minimum of %s, aborting..." % (
+                           self.instance.wallet[self.quote],
+                           self.quote,
+                           QUOTE_LIMIT))
+                self.cancel_orders()
+                return
+            if self.instance.wallet[self.base] <= BASE_LIMIT:
+                self.debug("[s]%s %s is below minimum of %s, aborting..." % (
+                           self.instance.wallet[self.base],
+                           self.base,
+                           BASE_LIMIT))
+                self.cancel_orders()
+                return
+
+            self._waiting = False
+            self.debug("[s]Got balances...")
+            if ALERT:
+                try:
+                    if self.instance.orderbook.owns[0].typ == 'bid':
+                        sell_alert.play()
+                    else:
+                        buy_alert.play()
+                except:
+                    pass
             self.cancel_orders()
             self.place_orders()
 
@@ -520,13 +606,13 @@ class Strategy(strategy.Strategy):
         self.debug("[s]next %s: %.8f %s @ %.8f %s - fees: %.8f %s - new: %.8f %s" % (
             bid_or_ask,
             volume_at_price,
-            self.instance.curr_base,
+            self.base,
             price,
-            self.instance.curr_quote,
+            self.quote,
             fees_at_price,
-            self.instance.curr_base,
+            self.base,
             price_with_fees,
-            self.instance.curr_quote))
+            self.quote))
 
         # Return the price with fees
         return math.ceil(price_with_fees * 1e8) / 1e8

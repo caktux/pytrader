@@ -4,3 +4,6 @@
 *.swp
 .ropeproject
 _*
+balancer.conf
+buy.conf
+sell.conf

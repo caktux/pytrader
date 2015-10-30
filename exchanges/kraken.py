@@ -1,3 +1,4 @@
+""" Kraken Client """
 
 import json
 import time
@@ -29,13 +30,13 @@ class PollClient(BaseObject):
         self.signal_connected = Signal()
         self.signal_disconnected = Signal()
 
-        self._timer_lag = Timer(40)
-        self._timer_info = Timer(5)
-        self._timer_depth = Timer(7)
-        self._timer_ticker = Timer(9)
-        self._timer_orders = Timer(12)
-        self._timer_volume = Timer(90)
-        self._timer_history = Timer(60)
+        self._timer_lag = Timer(120)
+        self._timer_info = Timer(8)
+        self._timer_depth = Timer(10)
+        self._timer_ticker = Timer(11)
+        self._timer_orders = Timer(15)
+        self._timer_volume = Timer(300)
+        self._timer_history = Timer(15)
 
         self._timer_lag.connect(self.slot_timer_lag)
         self._timer_info.connect(self.slot_timer_info)
@@ -46,7 +47,7 @@ class PollClient(BaseObject):
         self._timer_history.connect(self.slot_timer_history)
 
         self._info_timer = None  # used when delayed requesting private/info
-        self._info_ready = False
+        self._wait_for_next_info = False
 
         self.curr_base = curr_base
         self.curr_quote = curr_quote
@@ -54,12 +55,19 @@ class PollClient(BaseObject):
 
         self.secret = secret
         self.config = config
-        self.socket = None
+
+        use_ssl = self.config.get_bool("api", "use_ssl")
+        self.proto = {True: "https", False: "http"}[use_ssl]
         self.http_requests = Queue.Queue()
 
         self._http_thread = None
         self._terminating = False
         self.history_last_candle = None
+
+        self.request_info()
+        self.request_volume()
+        self.request_fulldepth()
+        self.request_history()
 
     def start(self):
         """start the client"""
@@ -80,7 +88,7 @@ class PollClient(BaseObject):
     def get_unique_microtime(self):
         """produce a unique nonce that is guaranteed to be ever increasing"""
         with self._nonce_lock:
-            microtime = int(time.time() * 1E6)
+            microtime = int(time.time() * 1e6)
             if microtime <= self._last_unique_microtime:
                 microtime = self._last_unique_microtime + 1
             self._last_unique_microtime = microtime
@@ -94,11 +102,9 @@ class PollClient(BaseObject):
             and then terminate. This is called in a separate thread after
             the streaming API has been connected."""
             querystring = "?pair=%s" % self.pair
-            # self.debug("### requesting initial full depth")
-            use_ssl = self.config.get_bool("api", "use_ssl")
-            proto = {True: "https", False: "http"}[use_ssl]
+            # self.debug("### requesting full depth")
             fulldepth = json.loads(http_request("%s://%s/0/public/Depth%s" % (
-                proto,
+                self.proto,
                 HTTP_HOST,
                 querystring
             )))
@@ -126,24 +132,30 @@ class PollClient(BaseObject):
         # Api() will have set this field to the timestamp of the last
         # known candle, so we only request data since this time
         # since = self.history_last_candle
-        # self.debug("[s]Last candle: %s" % self.history_last_candle)
 
         def history_thread():
             """request trading history"""
 
             querystring = "?pair=%s" % self.pair
-            # if not self.history_last_candle:
-            #     querystring += "&since=%i" % (self.history_last_candle * 1e9)
+            if not self.history_last_candle:
+                querystring += "&since=%i" % ((time.time() - 172800) * 1e9)
+                # self.debug("Requesting history since: %s" % time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 172800)))
+            else:
+                querystring += "&since=%i" % (self.history_last_candle * 1e9)
+                # self.debug("Last candle: %s" % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.history_last_candle)))
 
             # self.debug("### requesting history")
-            use_ssl = self.config.get_bool("api", "use_ssl")
-            proto = {True: "https", False: "http"}[use_ssl]
             json_hist = http_request("%s://%s/0/public/Trades%s" % (
-                proto,
+                self.proto,
                 HTTP_HOST,
                 querystring
             ))
             raw_history = json.loads(json_hist)
+
+            if raw_history['error']:
+                self.debug("Error in history: %s" % raw_history['error'])
+                return
+
             # self.debug("History: %s" % raw_history)
             history = []
             for h in raw_history["result"][self.pair]:
@@ -152,7 +164,7 @@ class PollClient(BaseObject):
                     'amount': float(h[1]),
                     'date': h[2]
                 })
-            if history and not raw_history["error"]:
+            if history:
                 self.signal_fullhistory(self, history)
 
         start_thread(history_thread, "http request trade history")
@@ -161,10 +173,8 @@ class PollClient(BaseObject):
         """ticker"""
         def ticker_thread():
             querystring = "?pair=%s" % self.pair
-            use_ssl = self.config.get_bool("api", "use_ssl")
-            proto = {True: "https", False: "http"}[use_ssl]
             json_ticker = http_request("%s://%s/0/public/Ticker%s" % (
-                proto,
+                self.proto,
                 HTTP_HOST,
                 querystring
             ))
@@ -177,6 +187,29 @@ class PollClient(BaseObject):
 
         start_thread(ticker_thread, "http request ticker")
 
+    def request_lag(self):
+        """lag"""
+        def lag_thread():
+            json_ticker = http_request("%s://%s/0/public/Time" % (
+                self.proto,
+                HTTP_HOST
+            ))
+            answer = json.loads(json_ticker)
+            if not answer["error"]:
+                lag = time.time() - answer['result']['unixtime']
+                result = {
+                    'lag': lag * 1000,
+                    'lag_text': "%0.3f s" % lag
+                }
+                translated = {
+                    "op": "result",
+                    "result": result,
+                    "id": "order_lag"
+                }
+                self.signal_recv(self, (json.dumps(translated)))
+
+        start_thread(lag_thread, "http request lag")
+
     def _slot_timer_info_later(self, _sender, _data):
         """the slot for the request_info_later() timer signal"""
         self.request_info()
@@ -186,13 +219,11 @@ class PollClient(BaseObject):
         """request the private/info in delay seconds from now"""
         if self._info_timer:
             self._info_timer.cancel()
-        self._info_ready = False
         self._info_timer = Timer(delay, True)
         self._info_timer.connect(self._slot_timer_info_later)
 
     def request_info(self):
         """request the private/Balance object"""
-        self._info_ready = False
         self.enqueue_http_request("private/Balance", {}, "info")
 
     def request_volume(self):
@@ -206,23 +237,18 @@ class PollClient(BaseObject):
     def _http_thread_func(self):
         """send queued http requests to the http API"""
         while not self._terminating:
-            # pop queued request from the queue and process it
-            (api_endpoint, params, reqid) = self.http_requests.get(True, 5)
-            translated = None
             try:
+                # pop queued request from the queue and process it
+                (api_endpoint, params, reqid) = self.http_requests.get(True)
+                translated = None
+
                 answer = self.http_signed_call(api_endpoint, params)
                 # self.debug("Result: %s" % answer)
                 if "result" in answer:
                     # the following will reformat the answer in such a way
                     # that we can pass it directly to signal_recv()
                     # as if it had come directly from the websocket
-                    if api_endpoint == 'public/Time':
-                        lag = time.time() - answer['result']['unixtime']
-                        result = {
-                            'lag': lag * 1000,
-                            'lag_text': "%0.3f s" % lag
-                        }
-                    elif api_endpoint == 'private/OpenOrders':
+                    if api_endpoint == 'private/OpenOrders':
                         result = []
                         orders = answer["result"]["open"]
                         for txid in orders:
@@ -274,6 +300,15 @@ class PollClient(BaseObject):
                     else:
                         self.debug("### unexpected http result:", answer, reqid)
 
+                if translated:
+                    self.signal_recv(self, (json.dumps(translated)))
+
+                self.http_requests.task_done()
+
+                # Try to prevent going over API rate limiting, especially
+                # when cancelling and adding orders all at once
+                time.sleep(3)
+
             except Exception as exc:
                 # should this ever happen? HTTP 5xx wont trigger this,
                 # something else must have gone wrong, a totally malformed
@@ -283,24 +318,19 @@ class PollClient(BaseObject):
                 # volatility it appears that this happens mostly when
                 # there is heavy load on their servers. Resubmitting
                 # the API call will then eventally succeed.
-                self.debug("### exception in _http_thread_func:", exc, api_endpoint, params, reqid)
+                self.debug("### exception in _http_thread_func:", exc)  # , api_endpoint, params, reqid)
                 self.debug(traceback.format_exc())
 
                 # enqueue it again, it will eventually succeed.
                 # self.enqueue_http_request(api_endpoint, params, reqid)
 
-            if translated:
-                self.signal_recv(self, (json.dumps(translated)))
-
-            self.http_requests.task_done()
-
-        self.debug("[s]Polling terminated...")
+        self.debug("Polling terminated...")
 
     def enqueue_http_request(self, api_endpoint, params, reqid):
         """enqueue a request for sending to the HTTP API, returns
         immediately, behaves exactly like sending it over the websocket."""
         if self.secret and self.secret.know_secret():
-            self.http_requests.put((api_endpoint, params, reqid), True, 5)
+            self.http_requests.put((api_endpoint, params, reqid), True, 10)
 
     def http_signed_call(self, api_endpoint, params):
         """send a signed request to the HTTP API V2"""
@@ -323,10 +353,8 @@ class PollClient(BaseObject):
             'API-Sign': base64.b64encode(sign)
         }
 
-        use_ssl = self.config.get_bool("api", "use_ssl")
-        proto = {True: "https", False: "http"}[use_ssl]
         url = "%s://%s/0/%s" % (
-            proto,
+            self.proto,
             HTTP_HOST,
             api_endpoint
         )
@@ -368,16 +396,14 @@ class PollClient(BaseObject):
 
     def slot_timer_lag(self, _sender, _data):
         """get server time and calculate lag"""
-        reqid = "order_lag"
-        api = "public/Time"
-        self.enqueue_http_request(api, {}, reqid)
+        self.request_lag()
 
     def slot_timer_info(self, _sender, _data):
         """download info data"""
         self.request_info()
 
     def slot_timer_ticker(self, _sender, _data):
-        """get server time and calculate lag"""
+        """get ticker prices"""
         self.request_ticker()
         # reqid = "ticker"
         # api = "public/Ticker"

@@ -61,8 +61,8 @@ USER_AGENT = "PyTrader"
 def http_request(url, post=None, headers=None):
     """request data from the HTTP API, returns the response a string. If a
     http error occurs it will *not* raise an exception, instead it will
-    return the content of the error document. This is because MtGox will
-    send 5xx http status codes even if application level errors occur
+    return the content of the error document. This is because we get
+    sent 5xx http status codes even if application level errors occur
     (such as canceling the same order twice or things like that) and the
     real error message will be in the json that is returned, so the return
     document is always much more interesting than the http status code."""
@@ -398,7 +398,7 @@ class Secret:
             return self.S_OK
 
         except Exception as exc:
-            # this key and secret do not work :-(
+            # this key and secret do not work
             self.secret = ""
             self.key = ""
             print("### Error occurred while testing the decrypted secret:")
@@ -629,7 +629,7 @@ class Api(BaseObject):
         self.signal_keypress = Signal()
         self.signal_strategy_unload = Signal()
 
-        self._idkey = ""
+        # self._idkey = ""
         self.wallet = {}
         self.trade_fee = 0  # percent (float, for example 0.6 means 0.6%)
         self.monthly_volume = 0  # variable currency per exchange
@@ -642,7 +642,7 @@ class Api(BaseObject):
         # the following will be set to true once the information
         # has been received after connect, once all thes flags are
         # true it will emit the signal_connected.
-        self.ready_idkey = False
+        # self.ready_idkey = False
         self.ready_info = False
         self._was_disconnected = True
 
@@ -678,16 +678,21 @@ class Api(BaseObject):
         if "websocket" in FORCE_PROTOCOL:
             use_websocket = True
 
-        if self.exchange == "gox":
+        if self.exchange == "gox":  # So obsolete...
             if use_websocket:
                 from exchanges.gox import WebsocketClient
                 self.client = WebsocketClient(self.curr_base, self.curr_quote, secret, config)
             else:
                 from exchanges.gox import SocketIOClient
                 self.client = SocketIOClient(self.curr_base, self.curr_quote, secret, config)
-        else:
+        elif self.exchange == "kraken":
             from exchanges.kraken import PollClient
             self.client = PollClient(self.curr_base, self.curr_quote, secret, config)
+        elif self.exchange == "poloniex":
+            from exchanges.poloniex import WebsocketClient
+            self.client = WebsocketClient(self.curr_base, self.curr_quote, secret, config)
+        else:
+            raise Exception("Unsupported exchange")
 
         self.client.signal_debug.connect(self.signal_debug)
         self.client.signal_disconnected.connect(self.slot_disconnected)
@@ -749,31 +754,31 @@ class Api(BaseObject):
                     self.cancel(order.oid)
 
     def base2float(self, int_number):
-        """convert base currency values from mtgox integer to float. Base
+        """convert base currency values from integer to float. Base
         currency are the coins you are trading (BTC, LTC, etc). Use this method
         to convert order volumes (amount of coins) from int to float."""
         return float(int_number) / self.mult_base
 
     def base2str(self, int_number):
-        """convert base currency values from mtgox integer to formatted string"""
+        """convert base currency values from integer to formatted string"""
         return self.format_base % (float(int_number) / self.mult_base)
 
     def base2int(self, float_number):
-        """convert base currency values from float to mtgox integer"""
+        """convert base currency values from float to integer"""
         return int(round(float_number * self.mult_base))
 
     def quote2float(self, int_number):
-        """convert quote currency values from mtgox integer to float. Quote
+        """convert quote currency values from integer to float. Quote
         currency is the currency used to quote prices (USD, EUR, etc), use this
         method to convert the prices of orders, bid or ask from int to float."""
         return float(int_number) / self.mult_quote
 
     def quote2str(self, int_number):
-        """convert quote currency values from mtgox integer to formatted string"""
+        """convert quote currency values from integer to formatted string"""
         return self.format_quote % (float(int_number) / self.mult_quote)
 
     def quote2int(self, float_number):
-        """convert quote currency values from float to mtgox integer"""
+        """convert quote currency values from float to integer"""
         return int(round(float_number * self.mult_quote))
 
     def check_connect_ready(self):
@@ -784,7 +789,7 @@ class Api(BaseObject):
         need_no_history = not self.config.get_bool("api", "load_history")
         need_no_depth = need_no_depth or FORCE_NO_FULLDEPTH
         need_no_history = need_no_history or FORCE_NO_HISTORY
-        ready_account = self.ready_idkey and self.ready_info and self.orderbook.ready_owns
+        ready_account = self.ready_info and self.orderbook.ready_owns  # and self.ready_idkey...
         if ready_account or need_no_account:
             if self.orderbook.ready_depth or need_no_depth:
                 if self.history.ready_history or need_no_history:
@@ -811,7 +816,7 @@ class Api(BaseObject):
     def slot_disconnected(self, _sender, _data):
         """this slot is connected to the client object, all it currently
         does is to emit a disconnected signal itself"""
-        self.ready_idkey = False
+        # self.ready_idkey = False
         self.ready_info = False
         self.orderbook.ready_owns = False
         self.orderbook.ready_depth = False
@@ -870,19 +875,95 @@ class Api(BaseObject):
         """handle subscribe messages (op:subscribe)"""
         self.debug("### subscribed channel", msg["channel"])
 
+    def _on_op_ticker(self, msg):
+        """handle incoming ticker message"""
+        msg = msg["ticker"]
+
+        bid = msg["bid"]
+        ask = msg["ask"]
+
+        # self.debug(" tick: %s %s" % (bid, ask))
+        self.signal_ticker(self, (bid, ask))
+
+    def _on_op_depth(self, msg):
+        """handle incoming depth message"""
+        msg = msg["depth"]
+        # if msg["currency"] != self.curr_quote:
+        #     return
+        # if msg["base"] != self.curr_base:
+        #     return
+        typ = msg["type"]
+        price = msg["price"]
+        volume = msg["volume"]
+        # timestamp = msg["timestamp"]
+        # total_volume = msg["total_volume"]
+
+        # delay = time.time() - timestamp
+        # self.debug("depth: %s: %.8f @ %.8f total: %.8f (age: %0.4f s)" % (
+        #     typ,
+        #     volume,
+        #     price,
+        #     price * volume,
+        #     delay / 1e6
+        # ))
+        self.signal_depth(self, (typ, price, volume))  # , total_volume))
+
+    def _on_op_trade(self, msg):
+        """handle incoming trade message"""
+        # if msg["trade"]["price_currency"] != self.curr_quote:
+        #     return
+        # if msg["trade"]["base"] != self.curr_base:
+        #     return
+        # else:
+        #     own = True
+        trade = msg['trade']
+        typ = trade["type"]
+        price = trade["price"]
+        volume = trade["amount"]
+        timestamp = int(trade["timestamp"])
+
+        # if own:
+        #     self.debug("trade: %s: %s @ %s (own order filled)" % (
+        #         typ,
+        #         volume,
+        #         price
+        #     ))
+        #     # send another private/info request because the fee might have
+        #     # changed. We request it a minute later because the server
+        #     # seems to need some time until the new values are available.
+        #     # self.client.request_info_later(60)
+        # else:
+        self.debug("trade: %s: %s @ %s" % (
+            typ,
+            volume,
+            price
+        ))
+
+        self.signal_trade(self, (timestamp, price, volume, typ, False))  # own))
+
+    def _on_op_chat(self, msg):
+        """trollbox messages"""
+        msg = msg['msg']
+        self.debug("%s %s[%s]: %s" % (
+            msg['type'] if msg['type'] != 'trollboxMessage' else ' > ',
+            msg['user'],
+            msg['rep'],
+            msg['msg']
+        ))
+
     def _on_op_result(self, msg):
         """handle result of authenticated API call (op:result, id:xxxxxx)"""
         result = msg["result"]
         reqid = msg["id"]
 
-        if reqid == "idkey":
-            self.debug("### got key, subscribing to account messages")
-            self._idkey = result
-            self.client.on_idkey_received(result)
-            self.ready_idkey = True
-            self.check_connect_ready()
+        # if reqid == "idkey":
+        #     self.debug("### got key, subscribing to account messages")
+        #     self._idkey = result
+        #     self.client.on_idkey_received(result)
+        #     self.ready_idkey = True
+        #     self.check_connect_ready()
 
-        elif reqid == "orders":
+        if reqid == "orders":
             # self.debug("### got own order list")
             # self.count_submitted = 0
             self.orderbook.init_own(result)
@@ -904,12 +985,11 @@ class Api(BaseObject):
 
             self.signal_wallet(self, None)
             self.ready_info = True
-            self.client._info_ready = True
-            self.check_connect_ready()
 
-        # elif reqid == "ticker":
-        #     self.debug(" tick: %s %s" % (msg['bid'], msg['ask']))
-        #     self.signal_ticker(self, (msg['bid'], msg['ask']))
+            if self.client._wait_for_next_info:
+                self.client._wait_for_next_info = False
+
+            self.check_connect_ready()
 
         elif reqid == "volume":
             self.monthly_volume = result['volume']
@@ -962,76 +1042,6 @@ class Api(BaseObject):
 
         if handler:
             handler(msg)
-
-    def _on_op_private_ticker(self, msg):
-        """handle incoming ticker message (op=private, private=ticker)"""
-        msg = msg["ticker"]
-        if msg["sell"]["currency"] != self.curr_quote:
-            return
-        if msg["base"] != self.curr_base:
-            return
-        bid = msg["buy"]["value"]
-        ask = msg["sell"]["value"]
-
-        self.debug(" tick: %s %s" % (bid, ask))
-        self.signal_ticker(self, (bid, ask))
-
-    def _on_op_private_depth(self, msg):
-        """handle incoming depth message (op=private, private=depth)"""
-        msg = msg["depth"]
-        if msg["currency"] != self.curr_quote:
-            return
-        if msg["base"] != self.curr_base:
-            return
-        typ = msg["type_str"]
-        price = msg["price"]
-        volume = msg["volume"]
-        timestamp = int(msg["now"])
-        total_volume = msg["total_volume"]
-
-        delay = time.time() - timestamp
-
-        self.debug("depth: %s: %s @ %s total: %s vol: %s (age: %0.2f s)" % (
-            typ,
-            volume,
-            price,
-            price * volume,
-            total_volume,
-            delay / 1e6
-        ))
-        self.signal_depth(self, (typ, price, volume, total_volume))
-
-    def _on_op_private_trade(self, msg):
-        """handle incoming trade mesage (op=private, private=trade)"""
-        if msg["trade"]["price_currency"] != self.curr_quote:
-            return
-        if msg["trade"]["base"] != self.curr_base:
-            return
-        else:
-            own = True
-        date = int(msg["trade"]["date"])
-        price = msg["trade"]["price"]
-        volume = msg["trade"]["amount"]
-        typ = msg["trade"]["trade_type"]
-
-        if own:
-            self.debug("trade: %s: %s @ %s (own order filled)" % (
-                typ,
-                volume,
-                price
-            ))
-            # send another private/info request because the fee might have
-            # changed. We request it a minute later because the server
-            # seems to need some time until the new values are available.
-            self.client.request_info_later(60)
-        else:
-            self.debug("trade: %s: %s @ %s" % (
-                typ,
-                volume,
-                price
-            ))
-
-        self.signal_trade(self, (date, price, volume, typ, own))
 
     def _on_op_private_user_order(self, msg):
         """handle incoming user_order message (op=private, private=user_order)"""
@@ -1111,19 +1121,14 @@ class Api(BaseObject):
                 self.debug(msg)
 
     def _on_invalid_call(self, msg):
-        """this comes as an op=remark message and is a strange mystery"""
-        # Workaround: Maybe a bug in their server software,
-        # I don't know what's missing. Its all poorly documented :-(
-        # Sometimes some API calls fail the first time for no reason,
-        # if this happens just send them again. This happens only
-        # somtimes (10%) and sending them again will eventually succeed.
+        """FIXME"""
 
-        if msg["id"] == "idkey":
-            self.debug("### resending private/idkey")
-            self.client.send_signed_call(
-                "private/idkey", {}, "idkey")
+        # if msg["id"] == "idkey":
+        #     self.debug("### resending private/idkey")
+        #     self.client.send_signed_call(
+        #         "private/idkey", {}, "idkey")
 
-        elif msg["id"] == "info":
+        if msg["id"] == "info":
             self.debug("### resending private/info")
             self.client.send_signed_call(
                 "private/info", {}, "info")
@@ -1320,7 +1325,7 @@ class OrderBook(BaseObject):
 
     def slot_depth(self, dummy_sender, data):
         """Slot for signal_depth, process incoming depth message"""
-        (typ, price, _voldiff, total_vol) = data
+        (typ, price, total_vol) = data
         if self._update_book(typ, price, total_vol):
             self.signal_changed(self, None)
 
@@ -1340,7 +1345,7 @@ class OrderBook(BaseObject):
             # we update the orderbook. We could also wait for the depth
             # message but we update the orderbook immediately.
             voldiff = -volume
-            if typ == "bid":  # tryde_type=bid means an ask order was filled
+            if typ == "bid":  # typ=bid means an ask order was filled
                 self._repair_crossed_asks(price)
                 if len(self.asks):
                     if self.asks[0].price == price:
@@ -1356,7 +1361,7 @@ class OrderBook(BaseObject):
                 if len(self.asks):
                     self.ask = self.asks[0].price
 
-            if typ == "ask":  # trade_type=ask means a bid order was filled
+            if typ == "ask":  # typ=ask means a bid order was filled
                 self._repair_crossed_bids(price)
                 if len(self.bids):
                     if self.bids[0].price == price:
@@ -1392,7 +1397,7 @@ class OrderBook(BaseObject):
                 if self.owns[i].oid == oid:
                     order = self.owns[i]
 
-                    # work around MtGox strangeness:
+                    # work around strangeness:
                     # for some reason it will send a "completed_passive"
                     # immediately followed by a "completed_active" when a
                     # market order is filled and removed. Since "completed_passive"
@@ -1505,27 +1510,25 @@ class OrderBook(BaseObject):
         self.signal_changed(self, None)
 
     def _repair_crossed_bids(self, bid):
-        """remove all bids that are higher that official current bid value,
-        this should actually never be necessary if their feed would not
-        eat depth- and trade-messages occasionally :-("""
+        """remove all bids that are higher than current bid value, which occurs
+        when ticker prices come in before depth"""
         while len(self.bids) and self.bids[0].price > bid:
             price = self.bids[0].price
             volume = self.bids[0].volume
             self._update_total_bid(-volume, price)
             self.bids.pop(0)
             self._valid_bid_cache = -1
-            self.debug("### repaired bid")
+            # self.debug("### repaired bid")
 
     def _repair_crossed_asks(self, ask):
-        """remove all asks that are lower that official current ask value,
-        this should actually never be necessary if their feed would not
-        eat depth- and trade-messages occasionally :-("""
+        """remove all asks that are lower than official ask value, which occurs
+        when ticker prices come in before depth"""
         while len(self.asks) and self.asks[0].price < ask:
             volume = self.asks[0].volume
             self._update_total_ask(-volume)
             self.asks.pop(0)
             self._valid_ask_cache = -1
-            self.debug("### repaired ask")
+            # self.debug("### repaired ask")
 
     def _update_book(self, typ, price, total_vol):
         """update the bids or asks list, insert or remove level and
