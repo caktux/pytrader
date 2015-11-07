@@ -7,7 +7,7 @@ import Queue
 import base64
 import hashlib
 import threading
-import traceback
+# import traceback
 from api import BaseObject, Signal, Timer, start_thread, http_request
 from api import FORCE_NO_FULLDEPTH, FORCE_NO_HISTORY
 from urllib import urlencode
@@ -70,23 +70,23 @@ class PollClient(BaseObject):
         self.request_history()
 
     def start(self):
-        """start the client"""
+        """Start the client"""
         self._http_thread = start_thread(self._http_thread_func, "http thread")
 
     def stop(self):
-        """stop the client"""
+        """Stop the client"""
         self._terminating = True
         self._timer_lag.cancel()
         self._timer_info.cancel()
+        self._timer_depth.cancel()
         self._timer_ticker.cancel()
         self._timer_orders.cancel()
         self._timer_volume.cancel()
-        self._timer_depth.cancel()
         self._timer_history.cancel()
         self.debug("### stopping client")
 
     def get_unique_microtime(self):
-        """produce a unique nonce that is guaranteed to be ever increasing"""
+        """Produce a unique nonce that is guaranteed to be ever increasing"""
         with self._nonce_lock:
             microtime = int(time.time() * 1e6)
             if microtime <= self._last_unique_microtime:
@@ -95,39 +95,45 @@ class PollClient(BaseObject):
             return microtime
 
     def request_fulldepth(self):
-        """start the fulldepth thread"""
+        """Start the fulldepth thread"""
 
         def fulldepth_thread():
-            """request the full market depth, initialize the order book
+            """Request the full market depth, initialize the order book
             and then terminate. This is called in a separate thread after
             the streaming API has been connected."""
             querystring = "?pair=%s" % self.pair
             # self.debug("### requesting full depth")
-            fulldepth = json.loads(http_request("%s://%s/0/public/Depth%s" % (
+            json_depth = http_request("%s://%s/0/public/Depth%s" % (
                 self.proto,
                 HTTP_HOST,
                 querystring
-            )))
-            depth = {}
-            depth['error'] = fulldepth['error']
-            # depth['data'] = fulldepth['result']
-            depth['data'] = {'asks': [], 'bids': []}
-            for ask in fulldepth['result'][self.pair]['asks']:
-                depth['data']['asks'].append({
-                    'price': float(ask[0]),
-                    'amount': float(ask[1])
-                })
-            for bid in reversed(fulldepth['result'][self.pair]['bids']):
-                depth['data']['bids'].append({
-                    'price': float(bid[0]),
-                    'amount': float(bid[1])
-                })
-            self.signal_fulldepth(self, (depth))
+            ))
+            if json_depth and not self._terminating:
+                try:
+                    fulldepth = json.loads(json_depth)
+                    depth = {}
+                    depth['error'] = fulldepth['error']
+                    # depth['data'] = fulldepth['result']
+                    depth['data'] = {'asks': [], 'bids': []}
+                    for ask in fulldepth['result'][self.pair]['asks']:
+                        depth['data']['asks'].append({
+                            'price': float(ask[0]),
+                            'amount': float(ask[1])
+                        })
+                    for bid in reversed(fulldepth['result'][self.pair]['bids']):
+                        depth['data']['bids'].append({
+                            'price': float(bid[0]),
+                            'amount': float(bid[1])
+                        })
+                    if depth:
+                        self.signal_fulldepth(self, (depth))
+                except Exception as exc:
+                    self.debug("### exception in fulldepth_thread:", exc)
 
         start_thread(fulldepth_thread, "http request full depth")
 
     def request_history(self):
-        """request trading history"""
+        """Start the trading history thread"""
 
         # Api() will have set this field to the timestamp of the last
         # known candle, so we only request data since this time
@@ -150,27 +156,31 @@ class PollClient(BaseObject):
                 HTTP_HOST,
                 querystring
             ))
-            raw_history = json.loads(json_hist)
+            if json_hist and not self._terminating:
+                try:
+                    raw_history = json.loads(json_hist)
 
-            if raw_history['error']:
-                self.debug("Error in history: %s" % raw_history['error'])
-                return
+                    if raw_history['error']:
+                        self.debug("Error in history: %s" % raw_history['error'])
+                        return
 
-            # self.debug("History: %s" % raw_history)
-            history = []
-            for h in raw_history["result"][self.pair]:
-                history.append({
-                    'price': float(h[0]),
-                    'amount': float(h[1]),
-                    'date': h[2]
-                })
-            if history:
-                self.signal_fullhistory(self, history)
+                    # self.debug("History: %s" % raw_history)
+                    history = []
+                    for h in raw_history["result"][self.pair]:
+                        history.append({
+                            'price': float(h[0]),
+                            'amount': float(h[1]),
+                            'date': h[2]
+                        })
+                    if history:
+                        self.signal_fullhistory(self, history)
+                except Exception as exc:
+                    self.debug("### exception in history_thread:", exc)
 
         start_thread(history_thread, "http request trade history")
 
     def request_ticker(self):
-        """ticker"""
+        """Request ticker"""
         def ticker_thread():
             querystring = "?pair=%s" % self.pair
             json_ticker = http_request("%s://%s/0/public/Ticker%s" % (
@@ -178,35 +188,43 @@ class PollClient(BaseObject):
                 HTTP_HOST,
                 querystring
             ))
-            answer = json.loads(json_ticker)
-            # self.debug("TICK %s" % answer)
-            if not answer["error"]:
-                bid = float(answer['result'][self.pair]['b'][0])
-                ask = float(answer['result'][self.pair]['a'][0])
-                self.signal_ticker(self, (bid, ask))
+            if not self._terminating:
+                try:
+                    answer = json.loads(json_ticker)
+                    # self.debug("TICK %s" % answer)
+                    if not answer["error"]:
+                        bid = float(answer['result'][self.pair]['b'][0])
+                        ask = float(answer['result'][self.pair]['a'][0])
+                        self.signal_ticker(self, (bid, ask))
+                except Exception as exc:
+                    self.debug("### exception in ticker_thread:", exc)
 
         start_thread(ticker_thread, "http request ticker")
 
     def request_lag(self):
-        """lag"""
+        """Request server time to calculate lag"""
         def lag_thread():
-            json_ticker = http_request("%s://%s/0/public/Time" % (
+            json_time = http_request("%s://%s/0/public/Time" % (
                 self.proto,
                 HTTP_HOST
             ))
-            answer = json.loads(json_ticker)
-            if not answer["error"]:
-                lag = time.time() - answer['result']['unixtime']
-                result = {
-                    'lag': lag * 1000,
-                    'lag_text': "%0.3f s" % lag
-                }
-                translated = {
-                    "op": "result",
-                    "result": result,
-                    "id": "order_lag"
-                }
-                self.signal_recv(self, (json.dumps(translated)))
+            if not self._terminating:
+                try:
+                    answer = json.loads(json_time)
+                    if not answer["error"]:
+                        lag = time.time() - answer['result']['unixtime']
+                        result = {
+                            'lag': lag * 1000,
+                            'lag_text': "%0.3f s" % lag
+                        }
+                        translated = {
+                            "op": "result",
+                            "result": result,
+                            "id": "order_lag"
+                        }
+                        self.signal_recv(self, (json.dumps(translated)))
+                except Exception as exc:
+                    self.debug("### exception in lag_thread:", exc)
 
         start_thread(lag_thread, "http request lag")
 
@@ -319,7 +337,7 @@ class PollClient(BaseObject):
                 # there is heavy load on their servers. Resubmitting
                 # the API call will then eventally succeed.
                 self.debug("### exception in _http_thread_func:", exc)  # , api_endpoint, params, reqid)
-                self.debug(traceback.format_exc())
+                # self.debug(traceback.format_exc())
 
                 # enqueue it again, it will eventually succeed.
                 # self.enqueue_http_request(api_endpoint, params, reqid)
@@ -360,7 +378,11 @@ class PollClient(BaseObject):
         )
 
         # self.debug("### (%s) calling %s" % (proto, url))
-        return json.loads(http_request(url, post, headers))
+        try:
+            result = json.loads(http_request(url, post, headers))
+            return result
+        except ValueError as exc:
+            self.debug("### exception in http_signed_call:", exc)
 
     def send_order_add(self, typ, price, volume):
         """send an order"""

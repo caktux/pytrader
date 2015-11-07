@@ -559,6 +559,7 @@ class Strategy(strategy.Strategy):
                 self.debug("[s]Waiting for balances...")
                 return
 
+            # Check minimum limits
             if self.instance.wallet[self.quote] <= QUOTE_LIMIT:
                 self.debug("[s]%s %s is below minimum of %s, aborting..." % (
                            self.instance.wallet[self.quote],
@@ -641,7 +642,9 @@ class Strategy(strategy.Strategy):
             price = math.ceil((center * step_factor) * 1e8) / 1e8
 
             # Compensate the fees on sell price
-            if COMPENSATE_FEES and center:
+            if not center:
+                self.debug("[s]Waiting for price...")
+            elif COMPENSATE_FEES:
                 # Increase our next sell price
                 price = self.price_with_fees(price)
 

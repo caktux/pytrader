@@ -121,8 +121,8 @@ def try_get_lock_or_break_open():
     """this is an ugly hack to workaround possible deadlock problems.
     It is used during shutdown to make sure we can properly exit even when
     some slot is stuck (due to a programming error) and won't release the lock.
-    If we can't acquire it within 2 seconds we just break it open forcefully."""
-    time_end = time.time() + 2
+    If we can't acquire it within 5 seconds we just break it open forcefully."""
+    time_end = time.time() + 5
     while time.time() < time_end:
         if api.Signal._lock.acquire(False):
             return
@@ -1627,19 +1627,24 @@ def main():
         except Exception:
             debug_tb.append(traceback.format_exc())
 
-        # we are here because shutdown was requested.
-        #
+        # We are here because shutdown was requested.
         # Before we do anything we dump stacktraces of all currently running
         # threads to a separate logfile because this helps debugging freezes
         # and deadlocks that might occur if things went totally wrong.
 
-        with open("%s.stacktrace.log" % config.filename[:-4], "w") as stacklog:
-            stacklog.write(dump_all_stacks())
+        try:
+            with open("%s.stacktrace.log" % config.filename[:-4], "w") as stacklog:
+                stacklog.write(dump_all_stacks())
+        except Exception as exc:
+            print("Failed to write stacktrace logs:", exc)
 
         # we need the signal lock to be able to shut down. And we cannot
         # wait for any frozen slot to return, so try really hard to get
         # the lock and if that fails then unlock it forcefully.
-        try_get_lock_or_break_open()
+        try:
+            try_get_lock_or_break_open()
+        except Exception as exc:
+            print("Failed to shut down locks:", exc)
 
         # Now trying to shutdown everything in an orderly manner.it in the
         # Since we are still inside curses but we don't know whether
@@ -1667,6 +1672,12 @@ def main():
         except Exception:
             debug_tb.append(traceback.format_exc())
 
+        time.sleep(1)
+        try:
+            with open("%s.leftovers.log" % config.filename[:-4], "w") as stacklog:
+                stacklog.write(dump_all_stacks())
+        except Exception as exc:
+            print("Failed to write leftover stacktrace logs:", exc)
         # curses_loop() ends here, we must reach this point under all circumstances.
         # Now curses will restore the terminal back to cooked (normal) mode.
 
@@ -1736,7 +1747,7 @@ def main():
         if secret.prompt_decrypt() != secret.S_FAIL_FATAL:
             # Use curses wrapper
             curses.wrapper(curses_loop)
-            # curses ended, terminal is back in normal (cooked) mode
+            # curses ended, terminal should be back in normal (cooked) mode
 
             if len(debug_tb):
                 print "\n\n*** error(s) in curses_loop() that caused unclean shutdown:\n"
@@ -1744,11 +1755,11 @@ def main():
                     print trb
             else:
                 print
-                print "**************************************************************"
-                print "*  Please donate!                                            *"
-                print "*    caktux (pytrader):  18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha  *"
-                print "*    prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW  *"
-                print "**************************************************************"
+                print "***************************************************************"
+                print "*  Please donate!                                             *"
+                print "*    caktux: 0xf05b7f96ac8b607fe62bf77b8aaf926d719d4294 (ETH) *"
+                print "*            1EMtjvaxCGwFrLa8LHPwqa8xrxnj2VXFL5 (BTC)         *"
+                print "***************************************************************"
 
 if __name__ == "__main__":
     main()

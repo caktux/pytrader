@@ -15,6 +15,7 @@ Open a terminal in an empty folder or in the folder you usually use to clone rep
 
 ```
 git clone git://github.com/caktux/pytrader.git
+cd pytrader && pip install -r requirements.txt
 ```
 
 This will create a folder named pytrader containing all the needed files. Thats all, now it is installed and ready to use. You can now already watch live market data (without any trading functions being enabled), you can later add an API-key to it to have full access to your account but for now just proceed to the next step, start it without an account, just to make sure everything works.
@@ -179,6 +180,6 @@ Of course you could have also have followed my previous advise to not do anythin
 
 ##### Donations appreciated
 
-caktux (pytrader): 18zX3wb318o2Pw9ZUHgG3mmQME536Qg2Ha
+ETH: 0xf05b7f96ac8b607fe62bf77b8aaf926d719d4294
 
-prof7bit (goxtool): 1C8aDabADaYvTKvCAG1htqYcEgpAhkeYoW
+BTC: 1EMtjvaxCGwFrLa8LHPwqa8xrxnj2VXFL5

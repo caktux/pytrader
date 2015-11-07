@@ -89,6 +89,8 @@ def http_request(url, post=None, headers=None):
             data = read_gzipped(res)
     except HTTPError as err:
         data = read_gzipped(err)
+    except Exception as exc:
+        logging.debug("### exception in http_request: %s" % exc)
 
     return data
 
@@ -1753,7 +1755,7 @@ class OrderBook(BaseObject):
         """called by api when a new order has been acked after it has been
         submitted or after a receiving a user_order message for a new order.
         This is a separate method from _add_own because we additionally need
-        to fire the a bunch of signals when this happens"""
+        to fire a bunch of signals when this happens"""
         if not self.have_own_oid(order.oid):
             self.debug("### adding order:", order.typ, order.price, order.volume, order.oid)
             self._add_own(order)

@@ -6,7 +6,6 @@ import hmac
 import Queue
 import base64
 import hashlib
-import logging
 import threading
 import traceback
 from api import BaseObject, Signal, Timer, start_thread, http_request
@@ -22,16 +21,13 @@ HTTP_HOST = "poloniex.com"
 
 class PoloniexComponent(ApplicationSession):
 
-    def __init__(self, realm):
-        ApplicationSession.__init__(self, realm)
-        # print("Init: %s" % self.config.extra)
-
-    # @inlineCallbacks
     def onConnect(self):
-        logging.debug("transport connected")
-        # logging.debug("%s" % self.config.extra)
         client = self.config.extra['client']
+        client.debug("### connected, subscribing needed channels")
+        client.connected = True
         client.signal_connected(self, None)
+        client.request_fulldepth()
+        client.request_history()
         client._time_last_subscribed = time.time()
         self.join(self.config.realm)
 
@@ -41,7 +37,7 @@ class PoloniexComponent(ApplicationSession):
 
         def onTicker(*args):
             try:
-                if args[0] == client.pair:
+                if not client._terminating and args[0] == client.pair:
                     client._time_last_received = time.time()
                     # print("Ticker event received:", args)
 
@@ -55,75 +51,77 @@ class PoloniexComponent(ApplicationSession):
                     client.signal_recv(client, translated)
             except Exception as exc:
                 client.debug("onTicker exception:", exc)
-                self.debug(traceback.format_exc())
+                client.debug(traceback.format_exc())
 
         def onBookUpdate(*args):
             try:
-                data = args[0]
-                # print("BookUpdate event:", data)
-                if data['type'] in ('orderBookRemove', 'orderBookModify'):
-                    timestamp = time.time()
-                    translated = {
-                        'op': 'depth',
-                        'depth': {
-                            'type': data['data']['type'],
-                            'price': float(data['data']['rate']),
-                            'volume': float(data['data']['amount']) if data['type'] == 'orderBookModify' else 0,
-                            'timestamp': timestamp
-                        },
-                        'id': "depth"
-                    }
-                    client.signal_recv(client, translated)
-
-                elif data['type'] == 'newTrade':
-                    # {
-                    #     data: {
-                    #         tradeID: '364476',
-                    #         rate: '0.00300888',
-                    #         amount: '0.03580906',
-                    #         date: '2014-10-07 21:51:20',
-                    #         total: '0.00010775',
-                    #         type: 'sell'
-                    #     },
-                    #     type: 'newTrade'
-                    # }
-                    data = data['data']
-                    client.debug("newTrade:", data)
-                    translated = {
-                        'op': 'trade',
-                        'trade': {
-                            'id': data['tradeID'],
-                            'type': 'ask' if data['type'] == 'buy' else 'bid',
-                            'price': data['rate'],
-                            'amount': data['amount'],
-                            'timestamp': time.mktime(time.strptime(data['date'], "%Y-%m-%d %H:%M:%S"))
+                if not client._terminating:
+                    data = args[0]
+                    # print("BookUpdate event:", data)
+                    if data['type'] in ('orderBookRemove', 'orderBookModify'):
+                        timestamp = time.time()
+                        translated = {
+                            'op': 'depth',
+                            'depth': {
+                                'type': data['data']['type'],
+                                'price': float(data['data']['rate']),
+                                'volume': float(data['data']['amount']) if data['type'] == 'orderBookModify' else 0,
+                                'timestamp': timestamp
+                            },
+                            'id': "depth"
                         }
-                    }
-                    client.signal_recv(client, translated)
-                else:
-                    client.debug("Unknown trade event:", args)
+                        client.signal_recv(client, translated)
+
+                    elif data['type'] == 'newTrade':
+                        # {
+                        #     data: {
+                        #         tradeID: '364476',
+                        #         rate: '0.00300888',
+                        #         amount: '0.03580906',
+                        #         date: '2014-10-07 21:51:20',
+                        #         total: '0.00010775',
+                        #         type: 'sell'
+                        #     },
+                        #     type: 'newTrade'
+                        # }
+                        data = data['data']
+                        client.debug("newTrade:", data)
+                        translated = {
+                            'op': 'trade',
+                            'trade': {
+                                'id': data['tradeID'],
+                                'type': 'ask' if data['type'] == 'buy' else 'bid',
+                                'price': data['rate'],
+                                'amount': data['amount'],
+                                'timestamp': time.mktime(time.strptime(data['date'], "%Y-%m-%d %H:%M:%S"))
+                            }
+                        }
+                        client.signal_recv(client, translated)
+                    else:
+                        client.debug("Unknown trade event:", args)
 
             except Exception as exc:
                 client.debug("onBookUpdate exception:", exc)
-                self.debug(traceback.format_exc())
+                client.debug(traceback.format_exc())
 
         def onTrollbox(*args):
             try:
-                # print("troll:", args)
-                # msg = args[0]
-                translated = {
-                    "op": "chat",
-                    "msg": {
-                        'type': args[0],
-                        'user': args[2],
-                        'msg': html_parser.unescape(args[3]),
-                        'rep': args[4]
+                if not client._terminating:
+                    # print("troll:", args)
+                    # msg = args[0]
+                    translated = {
+                        "op": "chat",
+                        "msg": {
+                            'type': args[0],
+                            'user': args[2],
+                            'msg': html_parser.unescape(args[3]),
+                            'rep': args[4]
+                        }
                     }
-                }
-                client.signal_recv(client, translated)
+                    client.signal_recv(client, translated)
             except Exception as exc:
                 client.debug("onTrollbox exception:", exc)
-                self.debug(traceback.format_exc())
+                client.debug(traceback.format_exc())
 
         try:
             yield self.subscribe(onBookUpdate, client.pair)
@@ -195,18 +193,24 @@ class BaseClient(BaseObject):
         """stop the client"""
         self._terminating = True
         self._timer.cancel()
+        self._timer_history.cancel()
         self.debug("### stopping reactor")
-        reactor.stop()
+        try:
+            # reactor.stop()
+            reactor.callInThread(reactor.stop)
+        except Exception as exc:
+            self.debug("Reactor exception:", exc)
 
     def force_reconnect(self):
         """force client to reconnect"""
         try:
-            reactor.stop()
-            time.sleep(1)
+            # reactor.stop()
+            reactor.callInThread(reactor.stop)
+            # time.sleep(3)
+            reactor.run(installSignalHandlers=0)
         except Exception as exc:
             self.debug("Reactor exception:", exc)
             self.debug(traceback.format_exc())
-        reactor.run(installSignalHandlers=0)
 
     def _try_send_raw(self, raw_data):
         """send raw data to the websocket or disconnect and close"""
@@ -217,7 +221,8 @@ class BaseClient(BaseObject):
             except Exception as exc:
                 self.debug(exc)
                 self.connected = False
-                reactor.stop()
+                # reactor.stop()
+                reactor.callInThread(reactor.stop)
 
     def send(self, json_str):
         """there exist 2 subtly different ways to send a string over a
@@ -241,36 +246,39 @@ class BaseClient(BaseObject):
             and then terminate. This is called in a separate thread after
             the streaming API has been connected."""
             # self.debug("### requesting full depth")
-            fulldepth = http_request("%s://%s/public?command=returnOrderBook&currencyPair=%s&depth=500" % (
+            json_depth = http_request("%s://%s/public?command=returnOrderBook&currencyPair=%s&depth=500" % (
                 self.proto,
                 HTTP_HOST,
                 self.pair
             ))
-            if fulldepth:
-                fulldepth = json.loads(fulldepth)
+            if json_depth and not self._terminating:
+                try:
+                    fulldepth = json.loads(json_depth)
 
-            # self.debug("Depth: %s" % fulldepth)
+                    # self.debug("Depth: %s" % fulldepth)
 
-            depth = {}
-            depth['error'] = {}
+                    depth = {}
+                    depth['error'] = {}
 
-            if 'error' in fulldepth:
-                depth['error'] = fulldepth['error']
+                    if 'error' in fulldepth:
+                        depth['error'] = fulldepth['error']
 
-            depth['data'] = {'asks': [], 'bids': []}
+                    depth['data'] = {'asks': [], 'bids': []}
 
-            for ask in fulldepth['asks']:
-                depth['data']['asks'].append({
-                    'price': float(ask[0]),
-                    'amount': float(ask[1])
-                })
-            for bid in reversed(fulldepth['bids']):
-                depth['data']['bids'].append({
-                    'price': float(bid[0]),
-                    'amount': float(bid[1])
-                })
+                    for ask in fulldepth['asks']:
+                        depth['data']['asks'].append({
+                            'price': float(ask[0]),
+                            'amount': float(ask[1])
+                        })
+                    for bid in reversed(fulldepth['bids']):
+                        depth['data']['bids'].append({
+                            'price': float(bid[0]),
+                            'amount': float(bid[1])
+                        })
 
-            self.signal_fulldepth(self, depth)
+                    self.signal_fulldepth(self, depth)
+                except Exception as exc:
+                    self.debug("### exception in fulldepth_thread:", exc)
 
         start_thread(fulldepth_thread, "http request full depth")
 
@@ -296,22 +304,26 @@ class BaseClient(BaseObject):
                 self.pair,
                 querystring
             ))
-            raw_history = json.loads(json_hist)
+            if json_hist and not self._terminating:
+                try:
+                    raw_history = json.loads(json_hist)
 
-            # self.debug("History: %s" % raw_history)
+                    # self.debug("History: %s" % raw_history)
 
-            history = []
-            for h in reversed(raw_history):
-                history.append({
-                    'price': float(h['rate']),
-                    'amount': float(h['amount']),
-                    'date': time.mktime(time.strptime(h['date'], "%Y-%m-%d %H:%M:%S")) - 480
-                })
+                    history = []
+                    for h in reversed(raw_history):
+                        history.append({
+                            'price': float(h['rate']),
+                            'amount': float(h['amount']),
+                            'date': time.mktime(time.strptime(h['date'], "%Y-%m-%d %H:%M:%S")) - 480
+                        })
 
-            # self.debug("History: %s" % history)
+                    # self.debug("History: %s" % history)
 
-            if history:
-                self.signal_fullhistory(self, history)
+                    if history and not self._terminating:
+                        self.signal_fullhistory(self, history)
+                except Exception as exc:
+                    self.debug("### exception in history_thread:", exc)
 
         start_thread(history_thread, "http request trade history")
 
@@ -425,7 +437,7 @@ class BaseClient(BaseObject):
                 # there is heavy load on their servers. Resubmitting
                 # the API call will then eventally succeed.
                 self.debug("### exception in _http_thread_func:", exc)
-                self.debug(traceback.format_exc())
+                # self.debug(traceback.format_exc())
 
                 # enqueue it again, it will eventually succeed.
                 # self.enqueue_http_request(api_endpoint, params, reqid)
@@ -464,8 +476,12 @@ class BaseClient(BaseObject):
             HTTP_HOST,
             api_endpoint
         )
-        self.debug("### (%s) calling %s" % (self.proto, url))
-        return json.loads(http_request(url, post, headers))
+        # self.debug("### (%s) calling %s" % (self.proto, url))
+        try:
+            result = json.loads(http_request(url, post, headers))
+            return result
+        except ValueError as exc:
+            self.debug("### exception in http_signed_call:", exc)
 
     def send_order_add(self, typ, price, volume):
         """send an order"""
@@ -534,17 +550,11 @@ class WebsocketClient(BaseClient):
 
         try:
             self.runner = ApplicationRunner(url=u"wss://api.poloniex.com", realm=u"realm1", extra={'client': self})
-
-            self.connected = True
-            self.debug("### connected, subscribing needed channels")
-            self.request_fulldepth()
-            self.request_history()
-            # self.debug("### waiting for data...")
-
             self.runner.run(PoloniexComponent, start_reactor=False)
             reactor.run(installSignalHandlers=0)
         except Exception as exc:
-            self.debug("Boom: %s" % exc)
+            self.debug("Reactor exception:", exc)
+            self.debug(traceback.format_exc())
 
     def send(self, json_str):
         """send the json encoded string over the websocket"""
