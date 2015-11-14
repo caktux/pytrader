@@ -1,4 +1,3 @@
 pycrypto
 autobahn
 twisted
-pygame

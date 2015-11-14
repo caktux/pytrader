@@ -1,5 +1,5 @@
 #!/usr/bin/env python2
-
+# -*- coding: utf-8 -*-
 """
 Tool to display live market info and
 framework for experimenting with trading bots
@@ -313,7 +313,7 @@ class WinConsole(Win):
             col = COLOR_PAIR["con_text_buy"] + curses.A_BOLD
         if "trade: ask:" in txt:
             col = COLOR_PAIR["con_text_sell"] + curses.A_BOLD
-        self.win.addstr("\n" + txt, col)
+        self.win.addstr("\n" + txt.encode('utf-8'), col)
         self.done_paint()
 
 class PluginConsole(Win):

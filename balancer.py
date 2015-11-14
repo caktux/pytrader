@@ -270,6 +270,9 @@ class Strategy(strategy.Strategy):
                 if not self.simulate:
                     api.sell(0, -vol_buy)
 
+        if key == ord("f"):
+            self.instance.client.force_reconnect()
+
     def help(self):
         self.debug("[s]Press 'h' to see this help")
         self.debug("[s]Press 'i' for information")

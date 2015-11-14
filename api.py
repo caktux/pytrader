@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """API handler"""
 
 #  Copyright (c) 2013 Bernd Kreuss <prof7bit@gmail.com>
@@ -295,10 +297,10 @@ class BaseObject():
         self.signal_debug = Signal()
 
     def debug(self, *args):
-        """send a string composed of all *args to all slots who
+        """send a string composed of all *args to all slots that
         are connected to signal_debug or send it to the logger if
-        nobody is connected"""
-        msg = " ".join([str(x) for x in args])
+        none are connected"""
+        msg = " ".join([unicode(x) for x in args])
         if not self.signal_debug(self, (msg)):
             logging.debug(msg)
 

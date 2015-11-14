@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """ Poloniex Client """
 
 import json
@@ -21,14 +22,30 @@ HTTP_HOST = "poloniex.com"
 
 class PoloniexComponent(ApplicationSession):
 
+    def onLeave(self, details):
+        self.disconnect()
+
+    def onDisconnect(self):
+        client = self.config.extra['client']
+        if client.reconnect:
+            client.reconnect = False
+            client.run()
+        else:
+            reactor.stop()
+
     def onConnect(self):
         client = self.config.extra['client']
         client.debug("### connected, subscribing needed channels")
         client.connected = True
+        client.leave = self.leave
+
         client.signal_connected(self, None)
+
         client.request_fulldepth()
         client.request_history()
+
         client._time_last_subscribed = time.time()
+
         self.join(self.config.realm)
 
     @inlineCallbacks
@@ -109,15 +126,26 @@ class PoloniexComponent(ApplicationSession):
                 if not client._terminating:
                     # print("troll:", args)
                     # msg = args[0]
-                    translated = {
-                        "op": "chat",
-                        "msg": {
-                            'type': args[0],
-                            'user': args[2],
-                            'msg': html_parser.unescape(args[3]),
-                            'rep': args[4]
+                    if len(args) == 5:
+                        translated = {
+                            "op": "chat",
+                            "msg": {
+                                'type': args[0],
+                                'user': args[2],
+                                'msg': html_parser.unescape(args[3]),
+                                'rep': args[4]
+                            }
                         }
-                    }
+                    else:
+                        translated = {
+                            "op": "chat",
+                            "msg": {
+                                "type": args[0],
+                                "user": args[1],
+                                "msg": "-",
+                                "rep": "-"
+                            }
+                        }
                     client.signal_recv(client, translated)
             except Exception as exc:
                 client.debug("onTrollbox exception:", exc)
@@ -135,7 +163,6 @@ class PoloniexComponent(ApplicationSession):
             if not client._terminating:
                 client.debug("### ", exc.__class__.__name__, exc,
                              "reconnecting in %i seconds..." % 1)
-                time.sleep(1)
                 client.force_reconnect()
 
 class BaseClient(BaseObject):
@@ -179,7 +206,9 @@ class BaseClient(BaseObject):
         self._recv_thread = None
         self._http_thread = None
         self._terminating = False
+        self.reconnect = False
         self.connected = False
+        self.leave = None
         self._time_last_received = 0
         self._time_last_subscribed = 0
         self.history_last_candle = None
@@ -196,18 +225,15 @@ class BaseClient(BaseObject):
         self._timer_history.cancel()
         self.debug("### stopping reactor")
         try:
-            # reactor.stop()
-            reactor.callInThread(reactor.stop)
+            self.leave()
         except Exception as exc:
             self.debug("Reactor exception:", exc)
 
     def force_reconnect(self):
         """force client to reconnect"""
         try:
-            # reactor.stop()
-            reactor.callInThread(reactor.stop)
-            # time.sleep(3)
-            reactor.run(installSignalHandlers=0)
+            self.reconnect = True
+            self.leave()
         except Exception as exc:
             self.debug("Reactor exception:", exc)
             self.debug(traceback.format_exc())
@@ -216,13 +242,11 @@ class BaseClient(BaseObject):
         """send raw data to the websocket or disconnect and close"""
         if self.connected:
             try:
-                self.debug("Would send: %s" % raw_data)
+                self.debug("TODO - Would send: %s" % raw_data)
                 # self.socket.send(raw_data)
             except Exception as exc:
                 self.debug(exc)
-                self.connected = False
-                # reactor.stop()
-                reactor.callInThread(reactor.stop)
+                # self.connected = False
 
     def send(self, json_str):
         """there exist 2 subtly different ways to send a string over a
@@ -543,14 +567,17 @@ class WebsocketClient(BaseClient):
         self.hostname = WEBSOCKET_HOST
         self.signal_debug = Signal()
 
+    def run(self):
+        self.runner = ApplicationRunner(url=u"wss://api.poloniex.com", realm=u"realm1", extra={'client': self})
+        self.runner.run(PoloniexComponent, start_reactor=False)
+
     def _recv_thread_func(self):
         """connect to the websocket and start receiving in an infinite loop.
         Try to reconnect whenever connection is lost. Each received json
         string will be dispatched with a signal_recv signal"""
 
         try:
-            self.runner = ApplicationRunner(url=u"wss://api.poloniex.com", realm=u"realm1", extra={'client': self})
-            self.runner.run(PoloniexComponent, start_reactor=False)
+            self.run()
             reactor.run(installSignalHandlers=0)
         except Exception as exc:
             self.debug("Reactor exception:", exc)
