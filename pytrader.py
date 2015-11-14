@@ -21,8 +21,6 @@ framework for experimenting with trading bots
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 #  MA 02110-1301, USA.
 
-# pylint: disable=C0301,C0302,R0902,R0903,R0912,R0913,R0914,R0915,R0922,W0703
-
 import argparse
 import curses
 import curses.panel
@@ -34,6 +32,7 @@ import math
 import os
 import sys
 import time
+import textwrap
 import traceback
 import threading
 
@@ -172,7 +171,7 @@ class Win:
             self.paint()
             self.done_paint()
 
-    # method could be a function - pylint: disable=R0201
+    # method could be a function
     def done_paint(self):
         """update the sreen after paint operations, this will invoke all
         necessary stuff to refresh all (possibly overlapping) windows in
@@ -284,8 +283,10 @@ class WinConsole(Win):
 
     def slot_debug(self, dummy_instance, (txt)):
         """this slot will be connected to all debug signals."""
-        if txt.startswith('[s]') is False:
-            self.write(txt)
+        if txt.startswith('[c]'):
+            self.write("\n   ".join(textwrap.wrap(txt.replace('[c]', ''), self.width - 3)))
+        elif not txt.startswith('[s]'):
+            self.write(textwrap.fill(txt, self.width))
 
     def write(self, txt):
         """write a line of text, scroll if needed"""
@@ -349,7 +350,7 @@ class PluginConsole(Win):
     def slot_debug(self, dummy_instance, (txt)):
         """this slot will be connected to all plugin debug signals."""
         if (txt.startswith('[s]')):
-            self.write(txt.replace('[s]', ' '))
+            self.write(textwrap.fill(txt.replace('[s]', ' '), self.width))
 
     def write(self, txt):
         """write a line of text, scroll if needed"""
@@ -680,7 +681,6 @@ class WinChart(Win):
         for posy in range(self.height):
             if posy >= shigh and posy < sopen and posy < sclose:
                 # upper wick
-                # pylint: disable=E1101
                 self.addch(posy, posx, curses.ACS_VLINE, COLOR_PAIR["chart_text"])
             if posy >= sopen and posy < sclose:
                 # red body
@@ -690,7 +690,6 @@ class WinChart(Win):
                 self.addch(posy, posx, self.body_char, self.body_attr + COLOR_PAIR["chart_up"])
             if posy >= sopen and posy >= sclose and posy < slow:
                 # lower wick
-                # pylint: disable=E1101
                 self.addch(posy, posx, curses.ACS_VLINE, COLOR_PAIR["chart_text"])
 
     def paint(self):
@@ -905,12 +904,10 @@ class WinChart(Win):
 
         if self.is_in_range(book.bid):
             posy = self.price_to_screen(book.bid)
-            # pylint: disable=E1101
             self.addch(posy, posx, curses.ACS_HLINE, COLOR_PAIR["chart_up"])
 
         if self.is_in_range(book.ask):
             posy = self.price_to_screen(book.ask)
-            # pylint: disable=E1101
             self.addch(posy, posx, curses.ACS_HLINE, COLOR_PAIR["chart_down"])
 
     def slot_history_changed(self, _sender, _data):
@@ -1415,7 +1412,6 @@ class LogWriter():
         # not needed
         pass
 
-    # pylint: disable=R0201
     def slot_debug(self, sender, (msg)):
         """handler for signal_debug signals"""
         name = "%s.%s" % (sender.__class__.__module__, sender.__class__.__name__)
@@ -1578,7 +1574,6 @@ def main():
                 elif key == curses.KEY_F6:
                     DlgCancelOrders(stdscr, instance).modal()
                 elif key == curses.KEY_RESIZE:
-                    # pylint: disable=W0212
                     with api.Signal._lock:
                         stdscr.erase()
                         stdscr.refresh()

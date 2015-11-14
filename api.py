@@ -19,8 +19,6 @@
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 #  MA 02110-1301, USA.
 
-# pylint: disable=C0302,C0301,R0902,R0903,R0912,R0913,R0914,R0915,W0703,W0105
-
 import sys
 PY_VERSION = sys.version_info
 
@@ -47,7 +45,7 @@ from urllib2 import Request as URLRequest
 from urllib2 import urlopen, HTTPError
 import weakref
 
-input = raw_input  # pylint: disable=W0622,C0103
+input = raw_input
 
 FORCE_PROTOCOL = ""
 FORCE_NO_FULLDEPTH = False
@@ -117,7 +115,6 @@ def pretty_format(something):
             return str(something)
 
 
-# pylint: disable=R0904
 class ApiConfig(SafeConfigParser):
     """return a config parser object with default values. If you need to run
     more Api() objects at the same time you will also need to give each of them
@@ -355,7 +352,6 @@ class Secret:
         self.key = ""
         self.secret = ""
 
-        # pylint: disable=C0103
         self.password_from_commandline_option = None
 
     def decrypt(self, password):
@@ -438,7 +434,6 @@ class Secret:
                 result = self.S_NO_SECRET
         return result
 
-    # pylint: disable=R0201
     def prompt_encrypt(self):
         """ask for key, secret and password on the command line,
         then encrypt the secret and store it in the ini file."""
@@ -459,7 +454,6 @@ class Secret:
             else:
                 break
 
-        # pylint: disable=E1101
         hashed_pass = hashlib.sha512(password1.encode("utf-8")).digest()
         crypt_key = hashed_pass[:32]
         crypt_ini = hashed_pass[-16:]
@@ -602,7 +596,6 @@ class History(BaseObject):
         return len(self.candles)
 
 
-# pylint: disable=R0902
 class Api(BaseObject):
     """represents the API of the exchange. An Instance of this
     class will connect to the streaming socket.io API, receive live
@@ -948,8 +941,8 @@ class Api(BaseObject):
     def _on_op_chat(self, msg):
         """trollbox messages"""
         msg = msg['msg']
-        self.debug("%s %s[%s]: %s" % (
-            msg['type'] if msg['type'] != 'trollboxMessage' else ' > ',
+        self.debug("[c]%s %s[%s]: %s" % (
+            msg['type'] if msg['type'] != 'trollboxMessage' else ' >',
             msg['user'],
             msg['rep'],
             msg['msg']
