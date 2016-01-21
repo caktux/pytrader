@@ -30,7 +30,7 @@ cd pytrader
  ./pytrader.py
 ```
 
-Keyboard commands (only the ones useful in view-only mode, without Mt.Gox account):
+Keyboard commands (only the ones useful in view-only mode, without an account on an exchange):
 
 - <kbd>q</kbd> quit
 - <kbd>l</kbd> (lower case "L") reload the strategy module (see advanced usage)
@@ -43,7 +43,7 @@ Keyboard commands (only the ones useful in view-only mode, without Mt.Gox accoun
 - <kbd>,</kbd> depth chart zoom out (increase group size)
 - <kbd>.</kbd> depth chart zoom in (decrease group size)
 
-(There will be even more commands once you connect it to your Mt.Gox account)
+(There will be even more commands once you connect it to your exchange account)
 
 There is also a pytrader.ini file, it will be created on the first start. In the .ini file there are some parameters you can change, for example the currency pair you want to trade or some parameters regarding the network protocol. Some of the .ini settings can be overridden by command line options (use the --help option to see a list).
 
