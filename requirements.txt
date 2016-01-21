@@ -1,3 +1,4 @@
 pycrypto
 autobahn
 twisted
+simplejson

@@ -1,0 +1,7 @@
+pytrader:
+  build: .
+  restart: always
+  stdin_open: true
+  tty: true
+  ports:
+    - "22"
