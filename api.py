@@ -122,8 +122,8 @@ class ApiConfig(SafeConfigParser):
     in its constructor for the ini file, you can have separate configurations
     for separate Api() instances"""
 
-    _DEFAULTS = [["api", "base_currency", "BTC"],
-                 ["api", "quote_currency", "USD"],
+    _DEFAULTS = [["api", "base_currency", "XETH"],
+                 ["api", "quote_currency", "XXBT"],
                  ["api", "use_ssl", "True"],
                  ["api", "use_plain_old_websocket", "False"],
                  ["api", "use_http_api", "True"],
