@@ -12,6 +12,7 @@ RUN echo America/New_York | tee /etc/timezone && dpkg-reconfigure --frontend non
 # ENTRYPOINT ["./pytrader.py"]
 # CMD ["--strategy=balancer"]
 
+RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y supervisor openssh-server
 RUN apt-get install -y screen
 
